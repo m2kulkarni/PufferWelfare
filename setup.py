@@ -209,6 +209,9 @@ if not NO_OCEAN:
             c_ext.include_dirs.append('/usr/local/include')
             c_ext.extra_link_args.extend(['-L/usr/local/lib', '-llammps'])
 
+        if "diplomacy" in c_ext.name:
+            c_ext.sources.append("pufferlib/ocean/diplomacy/diplomacy.c")
+
 # Check if CUDA compiler is available. You need cuda dev, not just runtime.
 torch_extensions = []
 if not NO_TRAIN:
