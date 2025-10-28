@@ -211,6 +211,7 @@ if not NO_OCEAN:
 
         if "diplomacy" in c_ext.name:
             c_ext.sources.append("pufferlib/ocean/diplomacy/diplomacy.c")
+            c_ext.sources.append("pufferlib/ocean/diplomacy/diplomacy_map.c")
 
 # Check if CUDA compiler is available. You need cuda dev, not just runtime.
 torch_extensions = []

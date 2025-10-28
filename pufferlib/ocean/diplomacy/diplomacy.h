@@ -195,6 +195,11 @@ typedef struct {
     DislodgedUnit dislodged[MAX_UNITS];
     int num_dislodged;
 
+    // Persistent order results (survives phase transitions)
+    // Stores results from last processed phase for querying
+    OrderResult last_results[MAX_POWERS][MAX_UNITS];  // [power_id][order_idx]
+    int last_num_orders[MAX_POWERS];                   // Number of orders each power had
+
     // Game settings
     int max_years;          // Game ends after N years
     int welfare_mode;       // 1 for Welfare variant, 0 for standard

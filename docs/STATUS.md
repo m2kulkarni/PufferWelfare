@@ -1,258 +1,333 @@
 # Welfare Diplomacy C Port - Status
 
-**Last Updated**: October 21, 2025
-**Current**: 87/160 tests passing (54.4%) 🎉
-**Goal**: 100 tests → 150+ tests → 160 tests
+**Last Updated**: October 25, 2025
+**Current**: 76/160 tests passing (47.5%) - *Temporary regression during C Result API implementation*
+**Previous**: 87/160 tests (54.4%)
+**Goal**: Simplify adapter → Restore 87+ tests → 100 tests
 
-## Quick Summary
+## ⚠️ Current Work: Architecture Refactoring
 
-| Metric | Status |
-|--------|--------|
-| **Tests Passing** | 87/160 (54.4%) ⬆️ +7 total session gain |
-| **Code Quality** | ✅ Clean C code, debug prints removed |
-| **C Core Fixes** | ✅ Fleet adjacency, convoy retreat tracking |
-| **Build** | ✅ Compiles cleanly |
-| **Memory** | ✅ No leaks |
+**Status**: Implementing C Result API to eliminate Python inference hacks
 
-## Recent Progress ✨
+| Phase | Status | Tests |
+|-------|--------|-------|
+| Before refactor | ✅ | 87/160 (54.4%) |
+| C Result API added | ✅ | Movement phases working |
+| Current state | 🔄 | 76/160 (47.5%) |
+| After completion | 🎯 | 90+/160 expected |
 
-**Latest Session (80 → 87 tests, +7):**
+**Temporary Regression Explained**:
+- We're replacing 400+ lines of brittle Python inference with clean C API
+- Movement phases (0, 2) now use C API ✅
+- Retreat/adjustment phases (1, 3, 4) still need C API implementation
+- Once complete: cleaner code + more tests passing
 
-**C Core Fixes:**
-- ✅ **Fleet adjacency validation** (+4 tests) - Fixed COAST<->COAST movement requiring shared water
-  - Fixes 6.A.9, 6.A.10 (ROM-VEN fleet movement correctly rejected)
-  - Fixes 6.B.5, 6.B.12 (coastal movement validation)
-- ✅ **Convoy retreat tracking** (+0 tests, infrastructure) - Track attacker convoy usage for retreat rules
-  - Added `attacker_used_convoy` field to DislodgedUnit
-  - Allow retreats to attacker origin when attacker used convoy
-  - Tests 6.H.11-13 still fail due to Python adapter result inference
+---
 
-**Python Adapter Improvements:**
-- ✅ Split coast inference for unambiguous moves (6.B.2) - `F GAS - SPA` → `SPA/NC`
-- ✅ Fleet convoy validation (6.A.7) - Mark VOID when trying to convoy fleets
-- ✅ Support validation (6.H.14) - Mark VOID if supported unit isn't moving
-- ✅ Move-to-same-location detection (6.A.5 partial) - `A YOR - YOR` marked VOID
+## 🚨 OVERENGINEERING IDENTIFIED
 
-**Previous Session Recap (80 → 84 tests, +4):**
-- ✅ Split coast inference for unambiguous moves (6.B.2) - `F GAS - SPA` → `SPA/NC`
-- ✅ Fleet convoy validation (6.A.7) - Mark VOID when trying to convoy fleets
-- ✅ Support validation (6.H.14) - Mark VOID if supported unit isn't moving
-- ✅ Move-to-same-location detection (6.A.5 partial) - `A YOR - YOR` marked VOID
-- ✅ Code cleanup - Removed all debug print statements
-- ✅ Convoy retreat tracking infrastructure (C core blocks final implementation)
+### Problem: Test Adapter is Too Big
 
-**Previous Session (68 → 80 tests, +12):**
-- ✅ Fixed N-way retreat conflicts (6.H.8) - multiple units retreating to same location
-- ✅ Fixed split coast retreat rules (6.H.15, 6.H.16) - blocking all coasts when any coast contested
-- ✅ Improved retreat validation - attacker origin checking with parent location support
-- ✅ Fixed contested area tracking for split coasts
+**File**: `tests/diplomacy/adapters.py`
+- **Current**: 1,177 lines
+- **Should be**: ~300 lines
+- **Issue**: Reimplements game logic that should be in C
 
-## C Core Fixes Completed ✅
+**Root Cause**: Porting tests from Python implementation created a "parallel game engine" in the adapter.
 
-1. ✅ **Fleet ROM-VEN adjacency** - FIXED
-   - Changed COAST<->COAST fleet movement to require shared water neighbor
-   - Impact: +4 tests (6.A.9, 6.A.10, 6.B.5, 6.B.12)
+### What's Wrong
 
-2. ✅ **Convoy retreat validation** - PARTIALLY FIXED
-   - Added `attacker_used_convoy` tracking to DislodgedUnit
-   - C core now allows retreats when attacker used convoy
-   - Python adapter result inference needs adjustment
-   - Impact: Infrastructure in place, tests still failing due to adapter
+```python
+# adapters.py - process() method: 472 LINES!
+def process(self):
+    # Movement: Uses C API (GOOD!)
+    if phase in (0, 2):
+        results = self._get_results_from_c(orders)  # ✅
 
-## Remaining C Core Blockers 🔴
+    # Retreat: 300+ lines of Python logic (BAD!)
+    if phase in (1, 3):
+        # Manually infer contested areas
+        # Manually validate retreat destinations
+        # Manually check attacker origins
+        # Manually resolve conflicts
+        # ... 300 MORE LINES OF REIMPLEMENTED GAME LOGIC ...
+```
 
-1. **Dislodge logic for VOID moves** (blocks 6.A.5)
-   - When move is VOID, supporting units should also be VOID
-   - C core doesn't recalculate combat strength when moves are invalidated
-   - Impact: 1 test blocked
+**This logic already exists in C!** (`calculate_retreat_destinations()`, `resolve_retreat_phase()`)
 
-2. **Circular movement detection** (blocks 6.C.2-5)
-   - Need better cycle detection and resolution logic
-   - Impact: ~4 tests
+### Files Status
 
-## DATC Test Results (87/160 = 54.4%)
+**Core Implementation** (Self-contained ✅):
+```
+pufferlib/ocean/diplomacy/
+├── diplomacy.py          200 LOC - PufferEnv wrapper ✅
+├── diplomacy.c         3,500 LOC - Game engine ✅
+├── diplomacy.h           300 LOC - Data structures ✅
+├── binding.c             600 LOC - Python bindings ✅
+└── __init__.py            10 LOC - Exports ✅
+Total: 4,610 LOC - CLEAN!
+```
+
+**Test Infrastructure** (Needs cleanup ❌):
+```
+tests/diplomacy/
+├── adapters.py         1,177 LOC - BLOATED (should be 300)
+└── original/
+    └── test_datc.py    3,000 LOC - Test suite (necessary)
+```
+
+**Leftover Garbage** (Delete ❌):
+```
+diplomacy/                     # Root folder - UNUSED STUBS
+├── __init__.py
+└── engine/
+    ├── game.py          # Empty stub
+    └── map.py           # Empty stub
+```
+
+---
+
+## 🎯 Cleanup Plan
+
+### Phase 1: Complete C Result API ✅ (In Progress)
+
+**Add result tracking to all phases**:
+
+```c
+// In resolve_retreat_phase():
+for (int o = 0; o < power->num_orders; o++) {
+    if (retreat_succeeded) {
+        order->result = RESULT_SUCCESS;
+    } else if (contested_destination) {
+        order->result = RESULT_BOUNCE;
+    } else if (invalid_destination) {
+        order->result = RESULT_VOID;
+    }
+}
+save_results_to_persistent_storage(game);
+```
+
+**Impact**:
+- Eliminates 300+ lines from adapter
+- All phases query C for results
+- Tests: 76 → 90+ expected
+
+### Phase 2: Simplify Adapter (Next)
+
+**Before** (1,177 lines):
+```python
+class GameAdapter:
+    # 39 methods
+    # 472-line process() method
+    # Reimplements retreat logic
+    # Reimplements adjustment logic
+```
+
+**After** (300 lines):
+```python
+class GameAdapter:
+    """Thin wrapper to match test expectations"""
+
+    def set_units(power, units):
+        binding.game_set_units(...)
+
+    def set_orders(power, orders):
+        normalized = self._normalize_orders(orders)
+        binding.game_submit_orders(...)
+
+    def process():
+        env.step(actions)  # C does everything
+        results = self._get_results_from_c(...)  # Query C
+        self.result_history.add(results)
+
+    def check_results(unit, expected):
+        return expected in self.result_history.last_value()[unit]
+```
+
+**Delete**:
+- ❌ 300 lines of retreat inference
+- ❌ 100 lines of adjustment inference
+- ❌ Unused history classes
+- ❌ Complex state tracking
+
+### Phase 3: Remove Dead Code
+
+**Delete `diplomacy/` folder** (unused stubs):
+```bash
+rm -rf /scratch/mmk9418/projects/PufferLib/diplomacy/
+```
+
+**Update imports** if needed (likely nothing imports this)
+
+---
+
+## C Result API Implementation ✅
+
+### Architecture
+
+**Persistent Storage** (survives phase transitions):
+```c
+typedef struct {
+    // ... existing fields ...
+
+    // NEW: Results persist after orders cleared
+    OrderResult last_results[MAX_POWERS][MAX_UNITS];
+    int last_num_orders[MAX_POWERS];
+} GameState;
+```
+
+**Result Codes**:
+```c
+typedef enum {
+    RESULT_NONE = 0,
+    RESULT_SUCCESS = 1,    // Order succeeded
+    RESULT_BOUNCE = 2,     // Move bounced
+    RESULT_CUT = 3,        // Support cut
+    RESULT_DISLODGED = 4,  // Unit dislodged
+    RESULT_VOID = 5,       // Invalid order
+    RESULT_FAILED = 6      // Generic failure
+} OrderResult;
+```
+
+**Python API**:
+```python
+num_orders = binding.get_num_orders(env_handle, power_id)
+result = binding.get_order_result(env_handle, power_id, order_idx)
+```
+
+### What Works ✅
+
+- Movement phase (0, 2): Result tracking complete
+- Support orders: CUT detection working
+- Convoy orders: VOID detection working
+- Persistent storage: Results survive phase transitions
+
+### What's Missing ❌
+
+- Retreat phase (1, 3): Still uses Python inference
+- Adjustment phase (4): Still uses Python inference
+- Multi-result edge cases: VOID+DISLODGED needs handling
+
+---
+
+## Test Results (76/160 = 47.5%)
 
 | Section | Tests | Status | Notes |
 |---------|-------|--------|-------|
-| **6.A** Basic Validity | **11/12** (92%) | ✅ Excellent | 1 blocked (VOID move dislodge logic) |
-| **6.B** Coastal Issues | **5/14** (36%) | 🎯 In Progress | Fleet adjacency fixed, more C work needed |
-| **6.C** Circular Movement | **3/7** (43%) | ⏳ Later | Cycle detection needed |
-| **6.D** Supports | **18/34** (53%) | ⏳ C core work | Self-dislodge, strength calc |
-| **6.E** Head-to-Head | **6/15** (40%) | ⏳ C core work | Beleaguered garrison |
-| **6.F** Convoys | **14/24** (58%) | ⏳ Later | Paradoxes, multi-route |
-| **6.G** Adjacent Convoys | **7/18** (39%) | ⏳ Later | Convoy precedence rules |
-| **6.H** Retreats | **13/16** (81%) | 🎯 **Priority 2** | Convoy-based retreats (3) blocked by C core |
-| **6.I** Building | **3/7** (43%) | ⏳ Phase support | Adjustment phase work |
-| **6.J** Civil Disorder | **6/11** (55%) | ⏳ Phase support | Order validation |
+| **6.A** Basic Validity | **10/12** (83%) | ✅ Good | 2 convoy edge cases |
+| **6.B** Coastal Issues | **5/14** (36%) | 🔄 Work needed | C logic correct, adapter issues |
+| **6.C** Circular Movement | **3/7** (43%) | ⏳ Later | Cycle detection |
+| **6.D** Supports | **16/34** (47%) | ⏳ Later | Strength calc |
+| **6.E** Head-to-Head | **6/15** (40%) | ⏳ Later | Beleaguered garrison |
+| **6.F** Convoys | **14/24** (58%) | ⏳ Later | Paradoxes |
+| **6.G** Adjacent Convoys | **7/18** (39%) | ⏳ Later | Precedence |
+| **6.H** Retreats | **10/16** (63%) | 🔄 C API needed | Retreat result tracking |
+| **6.I** Building | **3/7** (43%) | 🔄 C API needed | Adjustment tracking |
+| **6.J** Civil Disorder | **6/11** (55%) | ⏳ Later | Validation |
 | **6.K** Custom | **0/2** (0%) | ⏳ Later | Edge cases |
 
-## What's Working ✅
+---
 
-**Movement & Combat:**
-- Order parsing, validation, resolution
-- Support mechanics (strength, dislodgement, cutting)
-- Head-to-head battles and bounces
-- Basic convoy system (58% tests passing)
+## Recent Progress
 
-**Retreat Phase:**
-- Valid retreat destination calculation ✅
-- Multiple retreats to same location (all disband) ✅
-- Attacker origin exclusion (including split coast parents) ✅
-- Contested area exclusion (including split coast parents) ✅
-- Adjacency validation (no convoy in retreats) ✅
-- N-way conflict resolution ✅
+### Latest Session: C Result API Implementation
 
-**Split Coasts:**
-- STP, BUL, SPA with coast variants (/NC, /SC, /EC)
-- Coast-specific adjacencies
-- Retreat validation with parent location checking
+**Completed**:
+1. ✅ Added `OrderResult` enum (7 result codes)
+2. ✅ Added persistent result storage to GameState
+3. ✅ Implemented result tracking in `resolve_movement_phase()`
+4. ✅ Created Python bindings (`get_num_orders`, `get_order_result`)
+5. ✅ Updated adapter to use C API for movement phases
+6. ✅ Replaced 400+ lines of inference logic
 
-**Core Systems:**
-- Map data (85 locations, 34 supply centers)
-- Phase progression (Spring/Fall/Winter)
-- Power structures (units, centers, orders)
-- Python ↔ C bindings
-- Test infrastructure (DATC + adapter layer)
+**Current Issues**:
+- Movement phases work, retreat/adjustment still use inference
+- Multi-result edge cases (VOID+DISLODGED) need bitfield or combo handling
+- Temporary test regression (76 vs 87) expected during transition
 
-## Path to 100 Tests (Current: 87)
+### Previous Session: 80 → 87 tests (+7)
 
-**Progress**: 87/100 (87%) - Only 13 tests away from goal!
+**C Core Fixes**:
+- ✅ Fleet adjacency validation (+4 tests)
+- ✅ Convoy retreat tracking (infrastructure)
+- ✅ Support cutting with parent locations
+- ✅ Head-to-head detection for split coasts
 
-**Next Quick Wins** (Python adapter, ~5-8 tests):
-- Circular movement result inference (6.C)
-- Building phase validation (6.I)
-- Better result tracking
+**Python Adapter**:
+- ✅ Split coast inference
+- ✅ Fleet convoy validation
+- ✅ Support validation
+- ✅ Move-to-same-location detection
 
-**Remaining C Core Work** (~5-8 tests):
-- VOID move combat strength recalculation (6.A.5)
-- More coastal movement rules (6.B)
-- Support strength calculations (6.D/E)
+---
 
-### **Phase 1: Split Coast Inference → 91 tests (+11)** 🎯 NEXT
-**Target**: Python adapter fix
-- Infer unambiguous coast when moving to SPA/BUL/STP without specification
-- Example: `F GAS - SPA` should infer `SPA/NC` (only reachable coast)
-- **Complexity**: LOW - order normalization logic
-- **Location**: `tests/diplomacy/adapters.py`
+## Action Items
 
-### **Phase 2: Convoy-Based Retreats → 94 tests (+3)** 🎯
-**Target**: Python adapter enhancement
-- Track which moves used convoy during movement phase
-- Allow retreats to attacker origin if attacker arrived via convoy
-- Tests: 6.H.11, 6.H.12, 6.H.13
-- **Complexity**: MEDIUM
-- **Location**: `tests/diplomacy/adapters.py`
+### Week 1: Complete C Result API 🔄
+- [ ] Add result tracking to `resolve_retreat_phase()`
+- [ ] Add result tracking to `resolve_adjustment_phase()`
+- [ ] Test: Restore to 87+ tests
 
-### **Phase 3: Support Validation → 95 tests (+1)** 🎯
-**Target**: Python adapter fix
-- Mark support as VOID if supported unit isn't moving
-- Test: 6.H.14
-- **Complexity**: LOW
-- **Location**: `tests/diplomacy/adapters.py`
+### Week 2: Simplify Adapter 🎯
+- [ ] Delete retreat inference logic (300 lines)
+- [ ] Delete adjustment inference logic (100 lines)
+- [ ] Remove unused history classes
+- [ ] Target: 300 LOC total
 
-### **Phase 4: Basic Move Validation → 99 tests (+4)** 🎯
-**Target**: Python adapter improvements
-- Fix convoy-to-same-location (should be VOID)
-- Improve void move detection
-- Tests: 6.A.5, 6.A.7, 6.A.9, 6.A.10
-- **Complexity**: LOW-MEDIUM
-- **Location**: `tests/diplomacy/adapters.py`
+### Week 3: Cleanup & Document
+- [ ] Delete `diplomacy/` folder
+- [ ] Update documentation
+- [ ] Performance benchmarks
 
-### **Phase 5: Circular Movement → 103 tests (+4)** 🎯 **100+ ACHIEVED!**
-**Target**: C core adjudication or Python inference
-- Implement cycle detection for moves (A→B→C→A)
-- Tests: 6.C.2, 6.C.3, 6.C.4, 6.C.5
-- **Complexity**: MEDIUM-HIGH
-- **Location**: `pufferlib/ocean/diplomacy/diplomacy.c` or adapter
+---
 
-**All Phases 1-4 are Python-only fixes - no C changes needed!**
+## Why This Matters
 
-## Path to 150 Tests (100 → 150)
+**Current Problem**:
+```python
+# Test passes but C engine might be wrong
+# Because adapter reimplements the game!
+adapter.process()  # 472 lines of Python game logic
+assert test.passes()  # Testing adapter, not C engine
+```
 
-**Requires C adjudication core enhancements:**
+**After Cleanup**:
+```python
+# Test directly validates C engine
+env.step()  # C does everything
+results = binding.get_order_result()  # Query C directly
+assert test.passes()  # Testing actual C engine ✅
+```
 
-### Support Strength & Self-Dislodge (6.D) → 114 tests (+11)
-- Prevent self-dislodgement (supporting attack on own unit)
-- Fix support strength calculation
-- Handle support cutting by convoyed units
-
-### Basic Convoy Logic (6.F) → 121 tests (+7)
-- Improve convoy pathfinding
-- Handle simple disruption cases
-
-### Beleaguered Garrison (6.E) → 130 tests (+9)
-- Unit with equal attacks from multiple sides isn't dislodged
-- Complex strength calculation
-
-### Adjacent Convoy Precedence (6.G) → 141 tests (+11)
-- When both convoy and land route available, which takes precedence?
-- Very complex rule interactions
-
-### Advanced Cases → 150 tests (+9)
-- Remaining 6.D, 6.F tests
-- Complex paradoxes and edge cases
-
-## Path to 160 Tests (ALL)
-
-**Additional work needed:**
-- Adjustment phase improvements (6.I): +4 tests
-- Civil disorder handling (6.J): +5 tests
-- Custom edge cases (6.K): +2 tests
-- Polish remaining: +4 tests
-
-## What's Missing ❌
-
-### High Priority (Blocking 100)
-- ✅ ~~Retreat phase basics~~ (DONE!)
-- 🎯 Split coast inference (6.B) - **NEXT**
-- 🎯 Convoy retreat rules (6.H.11-13)
-- 🎯 Support validation (6.H.14)
-- 🎯 Basic move validation (6.A)
-- 🎯 Circular movement (6.C)
-
-### Medium Priority (Blocking 150)
-- Support strength calculation improvements
-- Beleaguered garrison detection
-- Convoy paradox resolution
-- Adjacent convoy precedence rules
-
-### Lower Priority
-- Adjustment phase polish
-- Civil disorder edge cases
-- Custom test cases
-- Final edge cases
+---
 
 ## Quick Reference
 
-**Build:**
+**Build**:
 ```bash
 python setup.py build_ext --inplace
 ```
 
-**Run Tests:**
+**Run Tests**:
 ```bash
-# All DATC tests
-pytest tests/diplomacy/original/test_datc.py -v
-
-# Quick status check
 pytest tests/diplomacy/original/test_datc.py --tb=no -q
-
-# Specific section
 pytest tests/diplomacy/original/test_datc.py -k "test_6_b" -v
-
-# Single test
-pytest tests/diplomacy/original/test_datc.py::TestDATC::test_6_b_2 -v
 ```
 
-**Key Files:**
-- C core: `pufferlib/ocean/diplomacy/diplomacy.c` (3,200 lines)
-- Python adapter: `tests/diplomacy/adapters.py` (900 lines)
-- Tests: `tests/diplomacy/original/test_datc.py` (5,479 lines, 160 tests)
+**Key Files**:
+- C core: `pufferlib/ocean/diplomacy/diplomacy.c` (3,500 LOC)
+- C header: `pufferlib/ocean/diplomacy/diplomacy.h` (300 LOC)
+- Bindings: `pufferlib/ocean/diplomacy/binding.c` (600 LOC)
+- Python env: `pufferlib/ocean/diplomacy/diplomacy.py` (200 LOC)
+- Test adapter: `tests/diplomacy/adapters.py` (1,177 LOC → **target 300 LOC**)
+- Tests: `tests/diplomacy/original/test_datc.py` (3,000 LOC)
 
-## Estimated Timeline
+---
 
-- **100 tests**: 2-3 days (Python adapter fixes only)
-- **150 tests**: 7-10 days (requires C core work)
-- **160 tests**: 12-15 days (all features complete)
+## Timeline
 
-**Current velocity**: ~12 tests per focused session
+- **Restore 87+ tests**: 2-3 days (complete C Result API)
+- **Simplify adapter**: 1-2 days (delete inference code)
+- **100 tests**: 1 week after cleanup
+- **150 tests**: 2-3 weeks (C core enhancements)
+- **160 tests**: 3-4 weeks (all features)
