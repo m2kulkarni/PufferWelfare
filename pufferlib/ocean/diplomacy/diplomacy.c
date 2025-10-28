@@ -943,23 +943,9 @@ typedef struct {
     int order_idx;
 } SupportOrder;
 
-void resolve_movement_phase(GameState* game) {
-    game->num_dislodged = 0;
-    game->num_combats = 0;
 
-    for (int p = 0; p < MAX_POWERS; p++) {
-        Power* power = &game->powers[p];
-        for (int o = 0; o < power->num_orders; o++) {
-            power->orders[o].result = RESULT_NONE;
-        }
-    }
-
-    MoveAttempt attempts[MAX_POWERS * MAX_UNITS];
-    int num_attempts = 0;
-
-    SupportOrder supports[MAX_POWERS * MAX_UNITS];
-    int num_supports = 0;
-
+static void collect_movement_orders(GameState* game, MoveAttempt* attempts, int* num_attempts,
+                                     SupportOrder* supports, int* num_supports) {
     // Step 1: Collect all move attempts from orders
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
@@ -1008,7 +994,7 @@ void resolve_movement_phase(GameState* game) {
             
             // Handle different order types
             if (order->type == ORDER_HOLD || order->type == ORDER_MOVE) {
-                MoveAttempt* attempt = &attempts[num_attempts++];
+                MoveAttempt* attempt = &attempts[(*num_attempts)++];
                 attempt->unit_power = p;
                 attempt->unit_idx = unit_idx;
                 attempt->from_location = order->unit_location;
@@ -1047,7 +1033,7 @@ void resolve_movement_phase(GameState* game) {
             }
             else if (order->type == ORDER_SUPPORT_HOLD || order->type == ORDER_SUPPORT_MOVE) {
                 // Collect support orders
-                SupportOrder* support = &supports[num_supports++];
+                SupportOrder* support = &supports[(*num_supports)++];
                 support->supporter_power = p;
                 support->supporter_location = order->unit_location;
                 support->supported_location = order->target_unit_location;
@@ -1058,7 +1044,7 @@ void resolve_movement_phase(GameState* game) {
                 support->order_idx = o;  // Track which order this came from
 
                 // Also add this unit to move attempts as HOLD (supporting units hold their position)
-                MoveAttempt* attempt = &attempts[num_attempts++];
+                MoveAttempt* attempt = &attempts[(*num_attempts)++];
                 attempt->unit_power = p;
                 attempt->unit_idx = unit_idx;
                 attempt->from_location = order->unit_location;
@@ -1075,7 +1061,7 @@ void resolve_movement_phase(GameState* game) {
             }
             else if (order->type == ORDER_CONVOY) {
                 // Convoying units also hold their position and can defend
-                MoveAttempt* attempt = &attempts[num_attempts++];
+                MoveAttempt* attempt = &attempts[(*num_attempts)++];
                 attempt->unit_power = p;
                 attempt->unit_idx = unit_idx;
                 attempt->from_location = order->unit_location;
@@ -1093,6 +1079,10 @@ void resolve_movement_phase(GameState* game) {
         }
     }
 
+}
+
+static void detect_support_cuts(GameState* game, MoveAttempt* attempts, int num_attempts,
+                                 SupportOrder* supports, int num_supports) {
     // Step 2: Determine which supports are cut by attacks
     // A support is cut if the supporter is attacked by any unit (except the supported unit)
     // NOTE: Convoyed moves are checked later after convoy disruption (Step 6b)
@@ -1137,6 +1127,10 @@ void resolve_movement_phase(GameState* game) {
         }
     }
     
+}
+
+static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_attempts,
+                                 SupportOrder* supports, int num_supports) {
     // Step 3: Calculate attack and defense strengths with valid supports
     for (int i = 0; i < num_attempts; i++) {
         MoveAttempt* attempt = &attempts[i];
@@ -1290,6 +1284,10 @@ void resolve_movement_phase(GameState* game) {
         }
     }
     
+}
+
+static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempts, int num_attempts,
+                                             SupportOrder* supports, int num_supports) {
     // Step 5: Handle circular movements and chains
     // Detect and resolve cycles like A→B, B→C, C→A
     for (int i = 0; i < num_attempts; i++) {
@@ -1646,6 +1644,10 @@ void resolve_movement_phase(GameState* game) {
         }
     }
 
+}
+
+static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int num_attempts,
+                                     SupportOrder* supports, int num_supports) {
     // Step 7: Apply successful moves and remove dislodged units
     for (int i = 0; i < num_attempts; i++) {
         MoveAttempt* attempt = &attempts[i];
@@ -1792,9 +1794,12 @@ void resolve_movement_phase(GameState* game) {
             order->result = RESULT_CUT;
         } else {
             order->result = RESULT_SUCCESS;
-        }
     }
+  }
+}
 
+static void save_results_and_finalize(GameState* game, MoveAttempt* attempts, int num_attempts,
+                                       SupportOrder* supports, int num_supports) {
     // Save results to persistent storage before they get cleared
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
@@ -1859,6 +1864,30 @@ void calculate_retreat_destinations(GameState* game) {
             retreat->num_possible_retreats++;
         }
     }
+}
+
+void resolve_movement_phase(GameState* game) {
+    game->num_dislodged = 0;
+    game->num_combats = 0;
+
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        for (int o = 0; o < power->num_orders; o++) {
+            power->orders[o].result = RESULT_NONE;
+        }
+    }
+
+    MoveAttempt attempts[MAX_POWERS * MAX_UNITS];
+    int num_attempts = 0;
+    SupportOrder supports[MAX_POWERS * MAX_UNITS];
+    int num_supports = 0;
+
+    collect_movement_orders(game, attempts, &num_attempts, supports, &num_supports);
+    detect_support_cuts(game, attempts, num_attempts, supports, num_supports);
+    calculate_strengths(game, attempts, num_attempts, supports, num_supports);
+    resolve_conflicts_and_circular(game, attempts, num_attempts, supports, num_supports);
+    apply_successful_moves(game, attempts, num_attempts, supports, num_supports);
+    save_results_and_finalize(game, attempts, num_attempts, supports, num_supports);
 }
 
 void resolve_retreat_phase(GameState* game) {
