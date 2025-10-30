@@ -435,9 +435,13 @@ int parse_order(const char* order_str, Order* order, GameState* game) {
 
         int dest_loc = find_location_by_name(game->map, token);
 
-        // If not found and this is a fleet, try default_coast
-        if (dest_loc < 0 && order->unit_type == UNIT_FLEET) {
-            dest_loc = default_coast(game->map, order->unit_location, token);
+        // For fleets, always use default_coast to handle coast inference (DATC 6.B.2)
+        // This handles cases where location name exists but isn't reachable (e.g., parent location)
+        if (order->unit_type == UNIT_FLEET) {
+            int inferred_loc = default_coast(game->map, order->unit_location, token);
+            if (inferred_loc >= 0) {
+                dest_loc = inferred_loc;
+            }
         }
 
         if (dest_loc < 0) return -1;  // Invalid or ambiguous
@@ -470,6 +474,19 @@ int parse_order(const char* order_str, Order* order, GameState* game) {
             if (!token) return -1;
 
             int dest_loc = find_location_by_name(game->map, token);
+
+            // DATC 6.B.7-10: Support orders don't require coast specification
+            // If destination not found by exact name, try to find any coast variant
+            if (dest_loc < 0 && strlen(token) == 3) {
+                // Try to find any location that matches this base name (e.g., SPA/NC for SPA)
+                for (int i = 0; i < game->map->num_locations; i++) {
+                    if (strncmp(game->map->locations[i].name, token, 3) == 0) {
+                        dest_loc = i;
+                        break;
+                    }
+                }
+            }
+
             if (dest_loc < 0) return -1;
             order->dest_location = dest_loc;
         } else {
@@ -645,8 +662,20 @@ int validate_order(GameState* game, int power_id, const Order* order) {
                 can_support = 1;  // Adjacent to supported unit
             }
             if (order->dest_location >= 0 && order->dest_location < map->num_locations) {
+                // Check if supporter can reach destination or any of its coasts (DATC 6.B.7-9)
                 if (can_move(map, unit->type, unit->location, order->dest_location)) {
                     can_support = 1;  // Adjacent to destination
+                } else {
+                    // Try all coasts of the destination
+                    int coasts[10];
+                    int num_coasts;
+                    find_coasts(map, order->dest_location, coasts, &num_coasts);
+                    for (int c = 0; c < num_coasts; c++) {
+                        if (can_move(map, unit->type, unit->location, coasts[c])) {
+                            can_support = 1;  // Adjacent to a coast of destination
+                            break;
+                        }
+                    }
                 }
             }
             if (!can_support) {
@@ -993,6 +1022,26 @@ static void collect_movement_orders(GameState* game, MoveAttempt* attempts, int*
                     break;
                 }
             }
+
+            // If no exact match and this is a fleet, try to find unit at other coasts (DATC 6.B.10)
+            if (unit_idx < 0 && order->unit_type == UNIT_FLEET) {
+                int parent_loc = get_parent_location(game->map, order->unit_location);
+                int coasts[10];
+                int num_coasts;
+                find_coasts(game->map, parent_loc, coasts, &num_coasts);
+
+                for (int c = 0; c < num_coasts; c++) {
+                    for (int u = 0; u < power->num_units; u++) {
+                        if (power->units[u].location == coasts[c] && power->units[u].type == UNIT_FLEET) {
+                            unit_idx = u;
+                            // Update order location to match actual unit location
+                            order->unit_location = power->units[u].location;
+                            break;
+                        }
+                    }
+                    if (unit_idx >= 0) break;
+                }
+            }
             
             if (unit_idx < 0) {
                 continue;  // Order for non-existent unit
@@ -1193,8 +1242,14 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
                 }
                 
                 // Check if this support applies to this move
-                if (support->supported_location == attempt->from_location &&
-                    support->destination == attempt->to_location) {
+                // Compare parent locations for coasts (DATC 6.B.7-9)
+                int support_from_parent = get_parent_location(game->map, support->supported_location);
+                int attempt_from_parent = get_parent_location(game->map, attempt->from_location);
+                int support_to_parent = get_parent_location(game->map, support->destination);
+                int attempt_to_parent = get_parent_location(game->map, attempt->to_location);
+
+                if (support_from_parent == attempt_from_parent &&
+                    support_to_parent == attempt_to_parent) {
                     
                     // Additional check: supporter's power can't support dislodging own unit
                     // Find if there's own unit at destination
@@ -1244,16 +1299,23 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
 
         int destination = attacker->to_location;
         int source = attacker->from_location;
-        
+        int dest_parent = get_parent_location(game->map, destination);
+
         // Find all competing moves to this destination
         int max_attack_strength = 0;
         int num_with_max_strength = 0;
         int head_to_head_opponent_idx = -1;
-        
+
         for (int j = 0; j < num_attempts; j++) {
             MoveAttempt* other = &attempts[j];
 
-            if (!other->is_valid || other->to_location != destination) {
+            if (!other->is_valid || other->to_location < 0) {
+                continue;
+            }
+
+            // Compare parent locations for split coast handling (DATC 6.B.4-7)
+            int other_dest_parent = get_parent_location(game->map, other->to_location);
+            if (other_dest_parent != dest_parent) {
                 continue;  // Not attacking this destination
             }
 
@@ -1278,10 +1340,12 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
         }
         
         // Find defender at destination (if any)
+        // Compare parent locations for split coast handling (DATC 6.B)
         int defender_idx = -1;
         int defender_strength = 0;
         for (int j = 0; j < num_attempts; j++) {
-            if (attempts[j].from_location == destination) {
+            int defender_loc_parent = get_parent_location(game->map, attempts[j].from_location);
+            if (defender_loc_parent == dest_parent) {
                 defender_idx = j;
                 defender_strength = attempts[j].defend_strength;
                 break;
@@ -1390,10 +1454,17 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             for (int c = 0; c < cycle_len; c++) {
                 int cycle_dest = attempts[cycle_indices[c]].to_location;
                 int cycle_strength = attempts[cycle_indices[c]].attack_strength;
+                int cycle_dest_parent = get_parent_location(game->map, cycle_dest);
 
                 // Check for external attackers
                 for (int j = 0; j < num_attempts; j++) {
-                    if (attempts[j].to_location == cycle_dest && attempts[j].is_valid) {
+                    if (!attempts[j].is_valid || attempts[j].to_location < 0) {
+                        continue;
+                    }
+
+                    // Compare parent locations for split coast handling (DATC 6.B)
+                    int j_dest_parent = get_parent_location(game->map, attempts[j].to_location);
+                    if (j_dest_parent == cycle_dest_parent) {
                         // Is this attacker part of the cycle?
                         int in_cycle = 0;
                         for (int k = 0; k < cycle_len; k++) {
@@ -1455,13 +1526,21 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             }
 
             // Check if we're the only/strongest attacker to this destination
+            // Compare parent locations for split coasts (DATC 6.B.4-7)
             int is_strongest = 1;
             int max_str = attempt->attack_strength;
             int num_at_max = 1;
+            int dest_parent = get_parent_location(game->map, destination);
 
             for (int j = 0; j < num_attempts; j++) {
                 if (i == j) continue;
-                if (!attempts[j].is_valid || attempts[j].to_location != destination) {
+                if (!attempts[j].is_valid || attempts[j].to_location < 0) {
+                    continue;
+                }
+
+                // Compare parent locations - moves to different coasts conflict (DATC 6.B.4)
+                int j_dest_parent = get_parent_location(game->map, attempts[j].to_location);
+                if (j_dest_parent != dest_parent) {
                     continue;
                 }
 
@@ -1583,7 +1662,7 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             }
         }
     }
-    
+
     // Step 6b: Check convoy disruption and handle support cutting for convoyed moves
     // For convoyed moves:
     // - If convoy is disrupted (fleet dislodged), move fails and support is NOT cut
@@ -1984,7 +2063,10 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
         }
 
         if (was_dislodged) {
-            order->result = RESULT_DISLODGED;
+            // Dislodged support is cut (DATC 6.D.17)
+            // The adapter will add 'dislodged' automatically from the dislodged units list
+            order->result = RESULT_CUT;
+            support->is_cut = 1;  // Mark as cut for strength calculations
         } else if (!support->is_valid) {
             order->result = RESULT_VOID;
         } else if (support->is_cut) {
@@ -1996,14 +2078,21 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
                 MoveAttempt* check_attempt = &attempts[check_i];
                 // For SUPPORT_MOVE, check if unit at supported_location is moving to destination
                 if (order->type == ORDER_SUPPORT_MOVE) {
-                    if (check_attempt->from_location == support->supported_location &&
-                        check_attempt->to_location == support->destination) {
+                    // Compare parent locations to handle coast variants (DATC 6.B.7)
+                    int from_match = (get_parent_location(game->map, check_attempt->from_location) ==
+                                     get_parent_location(game->map, support->supported_location));
+                    int to_match = (get_parent_location(game->map, check_attempt->to_location) ==
+                                   get_parent_location(game->map, support->destination));
+                    if (from_match && to_match) {
                         move_exists = 1;
                         break;
                     }
                 } else {  // SUPPORT_HOLD
-                    // For hold support, just check if unit exists (always valid if unit exists)
-                    if (check_attempt->from_location == support->supported_location) {
+                    // For hold support, check if unit exists at supported location
+                    // DATC 6.D.28-32: Impossible moves are treated as holds, so support is valid
+                    int loc_match = (get_parent_location(game->map, check_attempt->from_location) ==
+                                    get_parent_location(game->map, support->supported_location));
+                    if (loc_match) {
                         move_exists = 1;
                         break;
                     }
@@ -2159,6 +2248,36 @@ void resolve_movement_phase(GameState* game) {
     detect_support_cuts(game, attempts, num_attempts, supports, num_supports);
     calculate_strengths(game, attempts, num_attempts, supports, num_supports);
     resolve_conflicts_and_circular(game, attempts, num_attempts, supports, num_supports);
+
+    // After dislodgements are determined, mark dislodged supports as cut and recalculate (DATC 6.D.17)
+    int needs_recalc = 0;
+    for (int s = 0; s < num_supports; s++) {
+        SupportOrder* support = &supports[s];
+        if (!support->is_cut) {  // Only check supports not already cut
+            for (int d = 0; d < game->num_dislodged; d++) {
+                if (game->dislodged[d].power_id == support->supporter_power &&
+                    game->dislodged[d].from_location == support->supporter_location) {
+                    support->is_cut = 1;
+                    needs_recalc = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Recalculate strengths and re-resolve if any dislodged supports were marked as cut
+    if (needs_recalc) {
+        // Clear previous dislodgements and reset strengths
+        game->num_dislodged = 0;
+        for (int i = 0; i < num_attempts; i++) {
+            attempts[i].attack_strength = 1;
+            attempts[i].defend_strength = 1;
+            attempts[i].can_move = 0;  // Reset can_move flags
+        }
+        calculate_strengths(game, attempts, num_attempts, supports, num_supports);
+        resolve_conflicts_and_circular(game, attempts, num_attempts, supports, num_supports);
+    }
+
     apply_successful_moves(game, attempts, num_attempts, supports, num_supports);
     save_results_and_finalize(game, attempts, num_attempts, supports, num_supports);
 }

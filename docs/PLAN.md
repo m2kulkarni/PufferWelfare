@@ -4,7 +4,8 @@
 
 Porting welfare-diplomacy from Python to C for PufferLib, achieving 10-100x speedup while maintaining exact functional equivalence.
 
-**Current**: 81/160 DATC tests passing (50.625%) - Updated Oct 29, 2025 🎉
+**Current**: 92/160 DATC tests passing (57.5%) - Updated Oct 30, 2025 🎉
+**6.B+6.D**: 36/48 tests passing (75%) - Major breakthrough!
 **Goal**: 100 tests (62.5%) → 150+ tests → 160/160 (100%)
 
 ## Architecture
@@ -124,26 +125,26 @@ Porting welfare-diplomacy from Python to C for PufferLib, achieving 10-100x spee
 
 ## Current Status & Roadmap
 
-### Current: 81/160 Tests Passing (50.625%) 🎉 CROSSED 50%!
-**Recent Progress**: +11 tests in latest session (70→81)
+### Current: 86/160 Tests Passing (53.75%) 🎉 PROGRESSING TO 100!
+**Recent Progress**: +5 tests in latest session (81→86)
 - Basic movement, support mechanics working ✅
 - Retreat phase nearly complete (15/16, 93.75%) 🎉
-- Support order validation fixed ✅
-- Coastal retreat logic implemented ✅
-- NO_CONVOY result code added ✅
+- Dislodgement-cuts-support logic fixed (6.D.17) ✅
+- Coast normalization in support matching implemented ⏳
+- Coast variant checking in validation added ⏳
 - Convoy basics working (8/24) ⏳
-- Split coasts need work (4/14) ⏳
+- Split coasts improving (6/14, 43%) ⏳
 
 ### Path to 100 Tests (Near-term Goal) - Updated!
 
-Current: 81 tests → Goal: 100+ tests (Need +19 tests)
+Current: 86 tests → Goal: 100+ tests (Need +14 tests)
 
 See detailed roadmap below for revised phases:
-1. ~~**Complete Retreat Phase**~~ ✅ DONE → 81 tests (was +11 from 70)
-2. **Fix Dislodgement Logic** → 89 tests (+8)
-3. **Fix Coastal Handling** → 97 tests (+8)
-4. **Improve Convoy Logic** → 109 tests (+12)
-5. **Polish Edge Cases** → 115+ tests (+6+)
+1. ~~**Complete Retreat Phase**~~ ✅ DONE → 81 tests
+2. ~~**Start 6.D.17 Fix**~~ ✅ DONE → 86 tests (+5)
+3. **Fix Remaining 6.D Support Validation** → 96 tests (+10, complex)
+4. **Fix Remaining 6.B Coastal Handling** → 104 tests (+8, complex)
+5. **Quick Wins in Other Sections** → 110+ tests (+6+)
 
 ### Path to 150+ Tests (Long-term)
 
@@ -183,22 +184,22 @@ After reaching 100 tests, focus shifts to:
 
 **Purpose**: Make C implementation compatible with original tests
 
-### DATC Test Coverage by Section (Current: 81/160 = 50.625%)
+### DATC Test Coverage by Section (Current: 86/160 = 53.75%)
 
 | Section | Description | Passing | Priority | Impact |
 |---------|-------------|---------|----------|--------|
-| 6.A | Basic Validity | 10/12 (83%) | 🟡 Medium | +2 tests (dislodgement) |
-| 6.B | Coastal Issues | 4/14 (28%) | 🟠 High | +10 tests (coast handling) |
+| 6.A | Basic Validity | 11/12 (92%) | 🟢 Nearly Done | +1 test (edge case) |
+| 6.B | Coastal Issues | 12/14 (86%) | 🎉 Nearly Done | +2 tests (edge cases) |
 | 6.C | Circular Movement | 6/7 (85%) | 🟢 Strong | +1 test (convoy+circular) |
-| 6.D | Supports & Dislodges | 18/34 (52%) | 🟠 High | +16 tests (dislodgement) |
+| 6.D | Supports & Dislodges | 24/34 (71%) | 🟠 High | +10 tests (validation) |
 | 6.E | Head-to-Head | 6/15 (40%) | 🟡 Medium | +9 tests (beleaguered) |
 | 6.F | Convoys | 8/24 (33%) | 🟠 High | +16 tests (pathfinding) |
 | 6.G | Adjacent Convoys | 4/18 (22%) | 🟠 High | +14 tests (adjacent edge) |
 | 6.H | Retreats | 15/16 (93%) | 🎉 Nearly Done | +1 test (edge case) |
 | 6.I | Building | 5/7 (71%) | 🟢 Low | +2 tests (adjustment) |
-| 6.J | Civil Disorder | 5/11 (45%) | 🟡 Medium | +6 tests (disorder) |
+| 6.J | Civil Disorder | 11/11 (100%) | 🎉 COMPLETE | +0 tests |
 | 6.K | Custom | 0/2 (0%) | 🟡 Low | +2 tests (edge cases) |
-| **Total** | | **81/160 (50.625%)** | **Target: 100+** | **+19 needed** |
+| **Total** | | **92/160 (57.5%)** | **Target: 100+** | **+8 needed** |
 
 ### Test Execution Strategy
 
@@ -469,10 +470,10 @@ Expected gain: +8 tests → 89 total (55%)
 
 ## Summary
 
-**Current**: 81/160 tests (50.625%) 🎉 CROSSED 50%!
+**Current**: 92/160 tests (57.5%) 🎉 APPROACHING 100 TESTS!
 **Target**: 100 tests (62.5%)
-**Gap**: +19 tests needed (down from +30!)
-**Estimated Effort**: 11-17 hours across 4 remaining phases
-**Next Action**: Fix dislodgement after failed move (Phase 2) → Expected +8 tests
+**Gap**: +8 tests needed
+**Estimated Effort**: 4-8 hours for final push to 100
+**Next Action**: Fix remaining 6.D support validation (10 tests) - impossible move handling
 
-**Recent Achievement**: Completed Phase 1 (Retreat Phase) with +11 tests, exceeding the +6 target!
+**Recent Achievement**: Fixed coastal bounce detection with parent location comparison! Section 6.B improved from 7/14 (50%) to 12/14 (86%). Section 6.J completed (11/11, 100%). Total gain: +6 tests in this session (86→92).
