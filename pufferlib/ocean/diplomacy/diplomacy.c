@@ -68,13 +68,19 @@ int default_coast(Map* map, int from_loc, const char* dest_name) {
         return -1;
     }
 
-    // First, try to find exact match
+    // First, try to find exact match and check if it's reachable
     int exact = find_location_by_name(map, dest_name);
     if (exact != -1) {
-        return exact;
+        // Check if exact match is reachable from from_loc
+        for (int j = 0; j < map->locations[from_loc].num_adjacent; j++) {
+            if (map->locations[from_loc].adjacencies[j] == exact) {
+                return exact;  // Exact match is reachable
+            }
+        }
+        // Exact match exists but not reachable - fall through to coast inference
     }
 
-    // If not found, check if it's a split coast location without coast specified
+    // Check if it's a split coast location - try to infer the correct coast
     // Try to find all variants of this location
     char base_name[4];
     if (strlen(dest_name) == 3) {
@@ -97,7 +103,7 @@ int default_coast(Map* map, int from_loc, const char* dest_name) {
             }
         }
 
-        // If exactly one reachable coast, return it
+        // If exactly one reachable coast, return it (DATC 6.B.2)
         if (num_matching == 1) {
             return matching_coasts[0];
         }
@@ -1020,12 +1026,11 @@ static void collect_movement_orders(GameState* game, MoveAttempt* attempts, int*
                     }
                     attempt->is_valid = 1; // The attempt itself is now a valid action (either the original move or a hold)
 
-                    // Check if this is a convoyed move (army moving to non-adjacent location)
+                    // Check if this is a convoyed move (army with valid convoy path)
                     if (attempt->to_location != -1 && order->unit_type == UNIT_ARMY) {
-                        int is_adjacent = can_move(game->map, order->unit_type,
-                                                   order->unit_location, order->target_location);
-                        if (!is_adjacent) {
-                            // Army move to non-adjacent location requires convoy
+                        // Check if there are convoy orders supporting this move
+                        if (is_convoyed_move(game, order->unit_location, order->target_location)) {
+                            // This move uses convoys (even if destination is adjacent)
                             attempt->is_convoyed = 1;
                         }
                     }
@@ -1118,9 +1123,15 @@ static void detect_support_cuts(GameState* game, MoveAttempt* attempts, int num_
                 int attacker_src_parent = get_parent_location(game->map, attacker->from_location);
 
                 if (attacker_src_parent != supported_loc_parent) {
-                    // Exception: own units don't cut support
-                    if (attacker->unit_power != support->supporter_power) {
-                        support->is_cut = 1;
+                    // Exception: defender cannot cut support for attack on itself (DATC 6.D.15)
+                    // If attacker's origin is the destination of the supported move, don't cut
+                    int support_dest_parent = get_parent_location(game->map, support->destination);
+
+                    if (attacker_src_parent != support_dest_parent) {
+                        // Exception: own units don't cut support
+                        if (attacker->unit_power != support->supporter_power) {
+                            support->is_cut = 1;
+                        }
                     }
                 }
             }
@@ -1131,7 +1142,39 @@ static void detect_support_cuts(GameState* game, MoveAttempt* attempts, int num_
 
 static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_attempts,
                                  SupportOrder* supports, int num_supports) {
-    // Step 3: Calculate attack and defense strengths with valid supports
+    // Step 3a: Invalidate hold supports on moving units
+    // A unit that has a move order cannot receive hold support (DATC 6.D.7)
+    for (int s = 0; s < num_supports; s++) {
+        SupportOrder* support = &supports[s];
+
+        if (!support->is_valid) {
+            continue;
+        }
+
+        // Check if this is a hold support (destination == supported_location)
+        if (support->destination == support->supported_location) {
+            // This is a hold support - check if supported unit has a move order
+            for (int i = 0; i < num_attempts; i++) {
+                MoveAttempt* attempt = &attempts[i];
+
+                if (attempt->from_location == support->supported_location) {
+                    // Found the unit - check if it has a valid move order
+                    if (attempt->order_idx >= 0) {
+                        Power* power = &game->powers[attempt->unit_power];
+                        Order* order = &power->orders[attempt->order_idx];
+                        if (order->type == ORDER_MOVE && attempt->is_valid) {
+                            // Unit has a VALID move order - hold support is invalid
+                            // If move is void/impossible, unit is treated as holding (DATC 6.D.28-30)
+                            support->is_valid = 0;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 3b: Calculate attack and defense strengths with valid supports
     for (int i = 0; i < num_attempts; i++) {
         MoveAttempt* attempt = &attempts[i];
         
@@ -1441,32 +1484,102 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
     // Step 6: Determine and record dislodgements
     for (int i = 0; i < num_attempts; i++) {
         MoveAttempt* attacker = &attempts[i];
-        
+
         if (!attacker->can_move || attacker->to_location < 0) {
             continue;  // Not moving
         }
-        
+
         // Check if we're dislodging a unit
         for (int j = 0; j < num_attempts; j++) {
             MoveAttempt* defender = &attempts[j];
-            
+
             if (defender->from_location == attacker->to_location) {
                 // There's a unit at our destination
                 // It's dislodged if we have strength to dislodge it
                 if (attacker->attack_strength > defender->defend_strength) {
-                    // Record dislodgement
-                    DislodgedUnit* dislodged = &game->dislodged[game->num_dislodged++];
-                    dislodged->type = defender->unit_type;
-                    dislodged->power_id = defender->unit_power;
-                    dislodged->from_location = defender->from_location;
-                    dislodged->dislodged_by_location = attacker->from_location;
-                    dislodged->attacker_used_convoy = attacker->is_convoyed ? 1 : 0;
-                    dislodged->num_possible_retreats = 0;  // Calculate later in retreat phase
+                    // Check if already dislodged (avoid duplicates)
+                    int already_dislodged = 0;
+                    for (int d = 0; d < game->num_dislodged; d++) {
+                        if (game->dislodged[d].power_id == defender->unit_power &&
+                            game->dislodged[d].from_location == defender->from_location) {
+                            already_dislodged = 1;
+                            break;
+                        }
+                    }
+
+                    if (!already_dislodged && game->num_dislodged < MAX_UNITS) {
+                        // Record dislodgement
+                        DislodgedUnit* dislodged = &game->dislodged[game->num_dislodged++];
+                        dislodged->type = defender->unit_type;
+                        dislodged->power_id = defender->unit_power;
+                        dislodged->from_location = defender->from_location;
+                        dislodged->dislodged_by_location = attacker->from_location;
+                        dislodged->attacker_used_convoy = attacker->is_convoyed ? 1 : 0;
+                        dislodged->num_possible_retreats = 0;  // Calculate later in retreat phase
+                    }
 
                     // Mark defender as not able to stay
                     // We'll remove the unit when applying moves
                 }
                 break;
+            }
+        }
+    }
+
+    // Step 6a: Check for units that failed to move but are being attacked at their origin
+    // This handles: bounced moves, void orders, and any unit that stays put but is attacked
+    for (int i = 0; i < num_attempts; i++) {
+        MoveAttempt* stationary_unit = &attempts[i];
+
+        // Skip units that successfully moved
+        if (stationary_unit->can_move) {
+            continue;
+        }
+
+        // This unit is staying at its location - check if it's being attacked
+        int strongest_attacker_idx = -1;
+        int strongest_attack_strength = stationary_unit->defend_strength;
+
+        for (int j = 0; j < num_attempts; j++) {
+            MoveAttempt* attacker = &attempts[j];
+
+            if (!attacker->can_move || attacker->to_location < 0) {
+                continue;  // Not a successful attack
+            }
+
+            // Check if this attacker is moving to the stationary unit's location
+            if (attacker->to_location == stationary_unit->from_location) {
+                // Found an attacker - check if it's stronger
+                if (attacker->attack_strength > strongest_attack_strength) {
+                    strongest_attack_strength = attacker->attack_strength;
+                    strongest_attacker_idx = j;
+                }
+            }
+        }
+
+        // If we found a strong enough attacker, dislodge this unit
+        if (strongest_attacker_idx >= 0) {
+            MoveAttempt* attacker = &attempts[strongest_attacker_idx];
+
+            // Check if already dislodged (avoid duplicates)
+            int already_dislodged = 0;
+            for (int d = 0; d < game->num_dislodged; d++) {
+                if (game->dislodged[d].power_id == stationary_unit->unit_power &&
+                    game->dislodged[d].from_location == stationary_unit->from_location) {
+                    already_dislodged = 1;
+                    break;
+                }
+            }
+
+            if (!already_dislodged && game->num_dislodged < MAX_UNITS) {
+                // Record dislodgement
+                DislodgedUnit* dislodged = &game->dislodged[game->num_dislodged++];
+                dislodged->type = stationary_unit->unit_type;
+                dislodged->power_id = stationary_unit->unit_power;
+                dislodged->from_location = stationary_unit->from_location;
+                dislodged->dislodged_by_location = attacker->from_location;
+                dislodged->attacker_used_convoy = attacker->is_convoyed ? 1 : 0;
+                dislodged->num_possible_retreats = 0;  // Calculate later in retreat phase
             }
         }
     }
@@ -1670,11 +1783,18 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
             // Don't apply move for dislodged unit - it will be removed/retreated
             continue;
         }
-        
+
         // Move the unit
         Power* power = &game->powers[attempt->unit_power];
         Unit* unit = &power->units[attempt->unit_idx];
-        unit->location = attempt->to_location;
+
+        // For armies, always use parent location (armies ignore coasts) - DATC 6.B.12
+        int dest_loc = attempt->to_location;
+        if (attempt->unit_type == UNIT_ARMY) {
+            dest_loc = get_parent_location(game->map, attempt->to_location);
+        }
+
+        unit->location = dest_loc;
     }
     
     for (int d = 0; d < game->num_dislodged; d++) {
@@ -1723,6 +1843,52 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
         }
     }
 
+    // Record all locations that had combat (for retreat exclusion)
+    // A location had combat if it was attacked by one or more units
+    // IMPORTANT: Only count attacks from units that were NOT dislodged (DATC 6.H.9)
+    for (int i = 0; i < num_attempts; i++) {
+        MoveAttempt* attempt = &attempts[i];
+
+        if (attempt->to_location < 0) {
+            continue;  // Not a move order
+        }
+
+        // Check if the attacker was dislodged - if so, don't count this as combat
+        // (DATC 6.H.9: "DISLODGED UNIT WILL NOT MAKE ATTACKERS AREA CONTESTED")
+        int attacker_was_dislodged = 0;
+        for (int d = 0; d < game->num_dislodged; d++) {
+            if (game->dislodged[d].power_id == attempt->unit_power &&
+                game->dislodged[d].from_location == attempt->from_location) {
+                attacker_was_dislodged = 1;
+                break;
+            }
+        }
+
+        if (attacker_was_dislodged) {
+            continue;  // Dislodged attackers don't make destination contested
+        }
+
+        // Check if this location already recorded
+        int already_recorded = 0;
+        for (int c = 0; c < game->num_combats; c++) {
+            if (game->combats[c].location == attempt->to_location) {
+                already_recorded = 1;
+                break;
+            }
+        }
+
+        if (!already_recorded && game->num_combats < MAX_LOCATIONS) {
+            // Record this location as having combat
+            Combat* combat = &game->combats[game->num_combats++];
+            combat->location = attempt->to_location;
+            combat->attack_strength = attempt->attack_strength;
+            combat->attacker_location = attempt->from_location;
+            combat->attacker_power = attempt->unit_power;
+            combat->defender_power = -1;  // Will be set if needed
+            combat->successful = attempt->can_move ? 1 : 0;
+        }
+    }
+
     // Set result codes for all orders
     for (int i = 0; i < num_attempts; i++) {
         MoveAttempt* attempt = &attempts[i];
@@ -1745,9 +1911,9 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
             }
         }
 
-        if (was_dislodged) {
-            order->result = RESULT_DISLODGED;
-        } else if (order->type == ORDER_MOVE) {
+        if (order->type == ORDER_MOVE) {
+            // For moves, set the move result (bounce/success/void)
+            // Dislodgement will be added by adapter separately
             if (attempt->can_move && attempt->to_location != -1) {
                 order->result = RESULT_SUCCESS;
             } else if (attempt->to_location == -1) {
@@ -1760,12 +1926,43 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
         } else if (order->type == ORDER_HOLD) {
             // Hold orders that weren't dislodged succeeded
             order->result = was_dislodged ? RESULT_DISLODGED : RESULT_SUCCESS;
+        } else if (was_dislodged) {
+            // Support/Convoy orders that were dislodged
+            order->result = RESULT_DISLODGED;
         } else if (order->type == ORDER_CONVOY) {
-            // Convoy orders: check if valid
+            // Convoy orders: check if valid and if convoy was used/disrupted
             if (!attempt->is_valid) {
+                // Invalid convoy order (bad syntax or impossible convoy)
                 order->result = RESULT_VOID;
             } else {
-                order->result = RESULT_SUCCESS;
+                // Check if there's a unit actually using this convoy
+                int convoy_used = 0;
+                int convoy_disrupted = 0;
+
+                // Look for a move attempt using this convoy
+                for (int check_i = 0; check_i < num_attempts; check_i++) {
+                    MoveAttempt* check_attempt = &attempts[check_i];
+                    if (check_attempt->is_convoyed &&
+                        check_attempt->from_location == order->target_unit_location &&
+                        check_attempt->to_location == order->dest_location) {
+                        convoy_used = 1;
+                        if (check_attempt->convoy_disrupted) {
+                            convoy_disrupted = 1;
+                        }
+                        break;
+                    }
+                }
+
+                if (!convoy_used) {
+                    // No unit is using this convoy (e.g., unit is holding)
+                    order->result = RESULT_VOID;
+                } else if (convoy_disrupted) {
+                    // Convoy was used but disrupted
+                    order->result = RESULT_NO_CONVOY;
+                } else {
+                    // Convoy succeeded
+                    order->result = RESULT_SUCCESS;
+                }
             }
         }
     }
@@ -1793,7 +1990,32 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
         } else if (support->is_cut) {
             order->result = RESULT_CUT;
         } else {
-            order->result = RESULT_SUCCESS;
+            // Check if the supported unit is actually making the move being supported
+            int move_exists = 0;
+            for (int check_i = 0; check_i < num_attempts; check_i++) {
+                MoveAttempt* check_attempt = &attempts[check_i];
+                // For SUPPORT_MOVE, check if unit at supported_location is moving to destination
+                if (order->type == ORDER_SUPPORT_MOVE) {
+                    if (check_attempt->from_location == support->supported_location &&
+                        check_attempt->to_location == support->destination) {
+                        move_exists = 1;
+                        break;
+                    }
+                } else {  // SUPPORT_HOLD
+                    // For hold support, just check if unit exists (always valid if unit exists)
+                    if (check_attempt->from_location == support->supported_location) {
+                        move_exists = 1;
+                        break;
+                    }
+                }
+            }
+
+            if (!move_exists) {
+                // Supporting a move that doesn't exist (unit is holding or moving elsewhere)
+                order->result = RESULT_VOID;
+            } else {
+                order->result = RESULT_SUCCESS;
+            }
     }
   }
 }
@@ -1847,16 +2069,67 @@ void calculate_retreat_destinations(GameState* game) {
             }
 
             // Cannot retreat to a location that had combat (contested)
+            // (DATC 6.H.16: If one coast is contested, other coasts are also unavailable)
             int had_combat = 0;
             for (int c = 0; c < game->num_combats; c++) {
-                if (game->combats[c].location == adj_loc) {
+                int combat_loc = game->combats[c].location;
+
+                // Direct match
+                if (combat_loc == adj_loc) {
                     had_combat = 1;
                     break;
+                }
+
+                // Check if adj_loc and combat_loc are different coasts of same territory
+                const char* adj_name = game->map->locations[adj_loc].name;
+                const char* combat_name = game->map->locations[combat_loc].name;
+                const char* adj_slash = strchr(adj_name, '/');
+                const char* combat_slash = strchr(combat_name, '/');
+
+                if (adj_slash && combat_slash) {
+                    // Both have coasts - check if same base territory
+                    int adj_base_len = adj_slash - adj_name;
+                    int combat_base_len = combat_slash - combat_name;
+
+                    if (adj_base_len == combat_base_len &&
+                        strncmp(adj_name, combat_name, adj_base_len) == 0) {
+                        // Same territory - if one coast contested, all coasts unavailable
+                        had_combat = 1;
+                        break;
+                    }
                 }
             }
 
             if (had_combat) {
                 continue;  // Skip contested location
+            }
+
+            // Cannot do "coastal crawl" - cannot retreat to other coast of attacker's origin
+            // (DATC 6.H.15: "NO COASTAL CRAWL IN RETREAT")
+            // Check if adj_loc is a different coast of the same territory as attacker_loc
+            const char* adj_name = game->map->locations[adj_loc].name;
+            const char* attacker_name = game->map->locations[attacker_loc].name;
+
+            // Check if both are coasts (contain '/') and have same base territory
+            int is_coastal_crawl = 0;
+            const char* adj_slash = strchr(adj_name, '/');
+            const char* attacker_slash = strchr(attacker_name, '/');
+
+            if (adj_slash && attacker_slash) {
+                // Both have coasts - check if same base territory but different coasts
+                int base_len = adj_slash - adj_name;
+                int attacker_base_len = attacker_slash - attacker_name;
+
+                if (base_len == attacker_base_len &&
+                    strncmp(adj_name, attacker_name, base_len) == 0 &&
+                    strcmp(adj_slash, attacker_slash) != 0) {
+                    // Same base territory, different coasts - this is coastal crawl
+                    is_coastal_crawl = 1;
+                }
+            }
+
+            if (is_coastal_crawl) {
+                continue;  // Skip - cannot coastal crawl in retreat
             }
 
             // Valid retreat destination
@@ -1907,6 +2180,32 @@ void resolve_retreat_phase(GameState* game) {
     int retreat_destinations[MAX_UNITS];  // Where each unit is retreating to (-1 = disband)
     int retreat_power[MAX_UNITS];
     int num_retreat_orders = 0;
+
+    // First pass: Mark all non-retreat orders as VOID (only retreats and disbands allowed)
+    // Also mark retreat/disband orders for non-dislodged units as VOID
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        for (int o = 0; o < power->num_orders; o++) {
+            Order* order = &power->orders[o];
+            if (order->type != ORDER_RETREAT && order->type != ORDER_DISBAND) {
+                // Invalid order type for retreat phase
+                order->result = RESULT_VOID;
+            } else {
+                // Retreat or disband order - check if this unit was actually dislodged
+                int unit_dislodged = 0;
+                for (int r = 0; r < power->num_retreats; r++) {
+                    if (power->retreats[r].from_location == order->unit_location) {
+                        unit_dislodged = 1;
+                        break;
+                    }
+                }
+                if (!unit_dislodged) {
+                    // Retreat/disband order for non-dislodged unit
+                    order->result = RESULT_VOID;
+                }
+            }
+        }
+    }
 
     // Process retreat orders for each power
     for (int p = 0; p < MAX_POWERS; p++) {

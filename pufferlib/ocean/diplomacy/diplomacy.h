@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 // Constants
-#define MAX_LOCATIONS 85        // Expanded from 76 to accommodate split coasts
+#define MAX_LOCATIONS 85       // 75 base locations + 6 split coast variants (BUL/EC, BUL/SC, SPA/NC, SPA/SC, STP/NC, STP/SC)
 #define MAX_POWERS 7
 #define MAX_UNITS 34
 #define MAX_ADJACENCIES 20
@@ -69,7 +69,8 @@ typedef enum {
     RESULT_CUT = 3,        // Support was cut
     RESULT_DISLODGED = 4,  // Unit was dislodged
     RESULT_VOID = 5,       // Order is invalid
-    RESULT_FAILED = 6      // Order failed (generic failure)
+    RESULT_FAILED = 6,     // Order failed (generic failure)
+    RESULT_NO_CONVOY = 7   // Convoy order failed (convoy disrupted or invalid)
 } OrderResult;
 
 // Location structure

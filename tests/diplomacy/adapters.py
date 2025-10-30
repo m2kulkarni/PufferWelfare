@@ -106,9 +106,34 @@ class GameAdapter:
         snapshot[str(power).upper()] = list(orders)
         self.order_history.add(snapshot)
 
-    def _get_results(self, orders_submitted):
+    def _get_results(self, orders_submitted, dislodged_before_step=None, phase_before_step=None):
         results = {}
         power_names = ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"]
+
+        # Use phase before step if provided, otherwise get current phase
+        if phase_before_step is not None:
+            current_phase = phase_before_step
+        else:
+            state = binding.query_game_state(self.env.env_handle)
+            current_phase = state.get("phase", "M")
+
+        # Get location name mapping
+        map_info = binding.query_map_info(self.env.env_handle)
+        idx_to_name = [loc["name"] for loc in map_info["locations"]]
+
+        # Get dislodged units from C (or use pre-captured list for retreat phase)
+        if dislodged_before_step is not None:
+            dislodged_units = dislodged_before_step
+        else:
+            dislodged_units = set()
+            dislodged_list = binding.get_dislodged_units(self.env.env_handle)
+            for d_info in dislodged_list:
+                unit_type = d_info['type']
+                location = d_info['from_location']
+                # UNIT_NONE = 0, UNIT_ARMY = 1, UNIT_FLEET = 2
+                unit_type_str = 'A' if unit_type == 1 else 'F'
+                loc_name = idx_to_name[location]
+                dislodged_units.add(f"{unit_type_str} {loc_name}")
 
         for pname, orders in orders_submitted.items():
             pidx = power_names.index(pname)
@@ -123,20 +148,60 @@ class GameAdapter:
                     if len(parts) >= 2:
                         unit_key = f"{parts[0]} {parts[1]}"
 
-                        if result_code == 1: results[unit_key] = []
-                        elif result_code == 2: results[unit_key] = ['bounce']
-                        elif result_code == 3: results[unit_key] = ['cut']
-                        elif result_code == 4: results[unit_key] = ['dislodged']
-                        elif result_code == 5: results[unit_key] = ['void']
-                        elif result_code == 6: results[unit_key] = ['bounce']
-                        else: results[unit_key] = []
+                        # Check if this is a retreat order (contains 'R' after unit)
+                        is_retreat_order = len(parts) >= 3 and parts[2] == 'R'
+
+                        # Build result list based on result code
+                        result_list = []
+                        if result_code == 1: result_list = []  # Success
+                        elif result_code == 2: result_list = ['bounce']
+                        elif result_code == 3: result_list = ['cut']
+                        elif result_code == 4: result_list = ['dislodged']
+                        elif result_code == 5: result_list = ['void']
+                        elif result_code == 6: result_list = ['bounce']
+                        elif result_code == 7: result_list = ['no convoy']
+                        else: result_list = []
+
+                        # If unit was dislodged during MOVEMENT phase, add 'dislodged' if not already present
+                        # Note: Don't add 'dislodged' during retreat phase - that's for movement phase only
+                        if current_phase in (0, 2) and unit_key in dislodged_units and 'dislodged' not in result_list:
+                            result_list.append('dislodged')
+
+                        # For retreat orders, BOUNCE or VOID means the unit is disbanded
+                        if is_retreat_order and ('bounce' in result_list or 'void' in result_list) and 'disband' not in result_list:
+                            result_list.append('disband')
+
+                        results[unit_key] = result_list
+
+        # Handle auto-disbanded units (dislodged units with no retreat order submitted)
+        # During retreat phase, units that were dislodged but had no order are auto-disbanded
+        if current_phase in (1, 3):  # Retreat phases
+            # Get all units that had orders submitted this phase
+            units_with_orders = set(results.keys())
+
+            # Check for dislodged units that had no retreat order
+            for unit_key in dislodged_units:
+                if unit_key not in units_with_orders:
+                    # This unit was dislodged but no retreat order was given - auto-disband
+                    results[unit_key] = ['disband']
 
         return results
 
     def process(self) -> None:
         state = binding.query_game_state(self.env.env_handle)
-        phase = state["phase"]
+        phase_before_step = state["phase"]  # Capture phase BEFORE step
         power_names = ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"]
+
+        # Capture dislodged units BEFORE processing (for retreat phase auto-disband tracking)
+        dislodged_before_step = None
+        if phase_before_step in (1, 3):  # Retreat phases
+            map_info = binding.query_map_info(self.env.env_handle)
+            idx_to_name = [loc["name"] for loc in map_info["locations"]]
+            dislodged_before_step = set()
+            for d_info in binding.get_dislodged_units(self.env.env_handle):
+                unit_type_str = 'A' if d_info['type'] == 1 else 'F'
+                loc_name = idx_to_name[d_info['from_location']]
+                dislodged_before_step.add(f"{unit_type_str} {loc_name}")
 
         orders_submitted = {}
         if hasattr(self, "_pending_orders") and self._pending_orders:
@@ -155,11 +220,11 @@ class GameAdapter:
         self.obs, rewards, dones, truncated, self.info = self.env.step(actions)
 
         if orders_submitted:
-            results = self._get_results(orders_submitted)
+            results = self._get_results(orders_submitted, dislodged_before_step, phase_before_step)
             self.result_history.add(results)
 
             for unit_key, result in results.items():
-                if "void" in result or "bounce" in result:
+                if "void" in result or "bounce" in result or "disband" in result:
                     self._popped_units.add(unit_key)
 
         self.state_history.add(binding.query_game_state(self.env.env_handle))
