@@ -1211,9 +1211,10 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
                     if (attempt->order_idx >= 0) {
                         Power* power = &game->powers[attempt->unit_power];
                         Order* order = &power->orders[attempt->order_idx];
-                        if (order->type == ORDER_MOVE && attempt->is_valid) {
-                            // Unit has a VALID move order - hold support is invalid
-                            // If move is void/impossible, unit is treated as holding (DATC 6.D.28-30)
+                        // DATC 6.D.28-32: Impossible moves (to_location < 0) are treated as holds
+                        // Hold support is only invalid if unit is actually moving (to_location >= 0)
+                        if (order->type == ORDER_MOVE && attempt->to_location >= 0 && attempt->is_valid) {
+                            // Unit has a VALID move order and is actually moving - hold support is invalid
                             support->is_valid = 0;
                             break;
                         }
@@ -1251,7 +1252,7 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
                 if (support_from_parent == attempt_from_parent &&
                     support_to_parent == attempt_to_parent) {
                     
-                    // Additional check: supporter's power can't support dislodging own unit
+                    // DATC 6.E.2/6.E.3: Supporter's power can't support dislodging own unit
                     // Find if there's own unit at destination
                     int own_unit_at_dest = 0;
                     for (int j = 0; j < num_attempts; j++) {
@@ -1261,7 +1262,7 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
                             break;
                         }
                     }
-                    
+
                     if (!own_unit_at_dest) {
                         attempt->attack_strength++;
                     } else {
@@ -1301,10 +1302,32 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
         int source = attacker->from_location;
         int dest_parent = get_parent_location(game->map, destination);
 
+        // First, check for head-to-head battle (must check ALL units, not just those attacking same dest)
+        int head_to_head_opponent_idx = -1;
+        for (int j = 0; j < num_attempts; j++) {
+            if (j == i) continue;
+            MoveAttempt* other = &attempts[j];
+
+            if (!other->is_valid || other->to_location < 0) {
+                continue;
+            }
+
+            // Check for head-to-head: other unit going from our dest to our source
+            // For split coasts, check parent locations (e.g., BUL/SC <-> BUL/EC)
+            int other_from_parent = get_parent_location(game->map, other->from_location);
+            int other_to_parent = get_parent_location(game->map, other->to_location);
+            int dest_parent = get_parent_location(game->map, destination);
+            int src_parent = get_parent_location(game->map, source);
+
+            if (other_from_parent == dest_parent && other_to_parent == src_parent) {
+                head_to_head_opponent_idx = j;
+                break;  // Found head-to-head opponent
+            }
+        }
+
         // Find all competing moves to this destination
         int max_attack_strength = 0;
         int num_with_max_strength = 0;
-        int head_to_head_opponent_idx = -1;
 
         for (int j = 0; j < num_attempts; j++) {
             MoveAttempt* other = &attempts[j];
@@ -1325,17 +1348,6 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
                 num_with_max_strength = 1;
             } else if (other->attack_strength == max_attack_strength) {
                 num_with_max_strength++;
-            }
-            
-            // Check for head-to-head battle
-            // For split coasts, check parent locations (e.g., BUL/SC <-> BUL/EC)
-            int other_from_parent = get_parent_location(game->map, other->from_location);
-            int other_to_parent = get_parent_location(game->map, other->to_location);
-            int dest_parent = get_parent_location(game->map, destination);
-            int src_parent = get_parent_location(game->map, source);
-
-            if (other_from_parent == dest_parent && other_to_parent == src_parent) {
-                head_to_head_opponent_idx = j;
             }
         }
         
@@ -1365,12 +1377,14 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
                 if (head_to_head_opponent_idx >= 0) {
                     // Head-to-head battle
                     MoveAttempt* opponent = &attempts[head_to_head_opponent_idx];
-                    if (attacker->attack_strength > opponent->attack_strength) {
-                        // We win - can move, they're dislodged
+                    // DATC 6.E.2: Prevent self-dislodgement in head-to-head battles
+                    if (attacker->attack_strength > opponent->attack_strength &&
+                        attacker->unit_power != opponent->unit_power) {
+                        // We win - can move, they're dislodged (not same power)
                         attacker->can_move = 1;
                         // Mark for dislodgement (tracked later)
                     } else {
-                        // Equal or weaker - both bounce
+                        // Equal or weaker, or same power - both bounce
                         continue;
                     }
                 } else {
@@ -1483,6 +1497,17 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                 }
 
                 if (!can_resolve_cycle) break;
+            }
+
+            // DATC 6.E.2: Check for same-power swap (2-unit cycle)
+            // Same-power units cannot swap (self-dislodgement prevention)
+            if (cycle_len == 2 && can_resolve_cycle) {
+                int unit1_power = attempts[cycle_indices[0]].unit_power;
+                int unit2_power = attempts[cycle_indices[1]].unit_power;
+                if (unit1_power == unit2_power) {
+                    // Same power trying to swap - not allowed
+                    can_resolve_cycle = 0;
+                }
             }
 
             // If cycle can resolve, mark all units in cycle as can_move
@@ -2117,6 +2142,7 @@ static void save_results_and_finalize(GameState* game, MoveAttempt* attempts, in
         game->last_num_orders[p] = power->num_orders;
         for (int o = 0; o < power->num_orders; o++) {
             game->last_results[p][o] = power->orders[o].result;
+            game->last_unit_locations[p][o] = power->orders[o].unit_location;  // Save for coast normalization
         }
     }
 

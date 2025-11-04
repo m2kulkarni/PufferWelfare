@@ -146,7 +146,13 @@ class GameAdapter:
                     order_str = orders[order_idx]
                     parts = order_str.strip().upper().split()
                     if len(parts) >= 2:
-                        unit_key = f"{parts[0]} {parts[1]}"
+                        # Get the actual unit location from C (after coast normalization)
+                        unit_location_idx = binding.get_order_unit_location(self.env.env_handle, pidx, order_idx)
+                        if unit_location_idx >= 0:
+                            unit_location_name = idx_to_name[unit_location_idx]
+                            unit_key = f"{parts[0]} {unit_location_name}"
+                        else:
+                            unit_key = f"{parts[0]} {parts[1]}"
 
                         # Check if this is a retreat order (contains 'R' after unit)
                         is_retreat_order = len(parts) >= 3 and parts[2] == 'R'
@@ -325,6 +331,7 @@ class GameAdapter:
     @property
     def command(self):
         last_orders = self.order_history.last_value() if self.order_history.values() else {}
+        last_results = self.result_history.last_value() if self.result_history.values() else {}
         result = {}
 
         for power_name, orders in last_orders.items():
@@ -340,6 +347,12 @@ class GameAdapter:
                         else: result[unit_key] = parts[2][0].upper()
                     else:
                         result[unit_key] = 'H'
+
+        # Also add normalized unit keys from results (for coast normalization)
+        # This ensures units with normalized locations are in the command dict
+        for unit_key in last_results.keys():
+            if unit_key not in result:
+                result[unit_key] = '-'  # Assume move order for normalized units
 
         return result
 

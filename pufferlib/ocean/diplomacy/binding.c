@@ -503,6 +503,33 @@ static PyObject* get_order_result_binding(PyObject* self, PyObject* args) {
     return PyLong_FromLong((long)result);
 }
 
+static PyObject* get_order_unit_location(PyObject* self, PyObject* args) {
+    PyObject* handle_obj;
+    int power_id;
+    int order_idx;
+    if (!PyArg_ParseTuple(args, "Oii", &handle_obj, &power_id, &order_idx)) {
+        return NULL;
+    }
+
+    Env* env = (Env*)PyLong_AsVoidPtr(handle_obj);
+    if (!env || !env->game) {
+        PyErr_SetString(PyExc_ValueError, "Invalid env handle or game not initialized");
+        return NULL;
+    }
+
+    if (power_id < 0 || power_id >= MAX_POWERS) {
+        return PyLong_FromLong(-1);
+    }
+
+    // Return from persistent storage (same as get_order_result)
+    if (order_idx < 0 || order_idx >= env->game->last_num_orders[power_id]) {
+        return PyLong_FromLong(-1);
+    }
+
+    int location = env->game->last_unit_locations[power_id][order_idx];
+    return PyLong_FromLong(location);
+}
+
 // Define custom methods macro
 #define MY_METHODS \
     {"query_game_state", query_game_state, METH_VARARGS, "Query game state"}, \
@@ -524,7 +551,8 @@ static PyObject* get_order_result_binding(PyObject* self, PyObject* args) {
     {"get_dislodged_units", get_dislodged_units, METH_VARARGS, "Get list of dislodged units with dislodger info"}, \
     {"list_possible_orders", list_possible_orders, METH_VARARGS, "List HOLD/MOVE orders for a unit"}, \
     {"get_num_orders", get_num_orders_binding, METH_VARARGS, "Get number of orders for a power"}, \
-    {"get_order_result", get_order_result_binding, METH_VARARGS, "Get result code for an order (RESULT_SUCCESS, RESULT_BOUNCE, etc.)"}
+    {"get_order_result", get_order_result_binding, METH_VARARGS, "Get result code for an order (RESULT_SUCCESS, RESULT_BOUNCE, etc.)"}, \
+    {"get_order_unit_location", get_order_unit_location, METH_VARARGS, "Get the unit location index for an order (after coast normalization)"}
 
 static PyObject* game_submit_orders(PyObject* self, PyObject* args) {
     PyObject* handle_obj;
@@ -564,6 +592,34 @@ static PyObject* game_submit_orders(PyObject* self, PyObject* args) {
         Order order;
         if (parse_order(order_str, &order, env->game) == 0) {
             order.power_id = power_id;
+
+            // DATC 6.B.10: Normalize coast variants - if order specifies wrong coast,
+            // find the correct coast where the unit actually is
+            int unit_found = 0;
+            for (int u = 0; u < power->num_units; u++) {
+                if (power->units[u].location == order.unit_location &&
+                    power->units[u].type == order.unit_type) {
+                    unit_found = 1;
+                    break;
+                }
+            }
+
+            // If unit not found at specified location, check other coasts of same parent
+            if (!unit_found) {
+                int parent_loc = get_parent_location(env->game->map, order.unit_location);
+                if (parent_loc != order.unit_location) {
+                    // This is a coast variant - search for unit at other coasts
+                    for (int u = 0; u < power->num_units; u++) {
+                        int unit_parent = get_parent_location(env->game->map, power->units[u].location);
+                        if (unit_parent == parent_loc && power->units[u].type == order.unit_type) {
+                            // Found unit at different coast of same parent - use that location
+                            order.unit_location = power->units[u].location;
+                            break;
+                        }
+                    }
+                }
+            }
+
             power->orders[power->num_orders++] = order;
         }
         // If parsing fails, just skip this order

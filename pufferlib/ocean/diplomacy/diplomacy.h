@@ -200,6 +200,7 @@ typedef struct {
     // Stores results from last processed phase for querying
     OrderResult last_results[MAX_POWERS][MAX_UNITS];  // [power_id][order_idx]
     int last_num_orders[MAX_POWERS];                   // Number of orders each power had
+    int last_unit_locations[MAX_POWERS][MAX_UNITS];   // Unit locations (after coast normalization)
 
     // Game settings
     int max_years;          // Game ends after N years
