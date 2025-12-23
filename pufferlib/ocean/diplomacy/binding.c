@@ -530,6 +530,77 @@ static PyObject* get_order_unit_location(PyObject* self, PyObject* args) {
     return PyLong_FromLong(location);
 }
 
+// Set game phase and year (e.g., "S1901M", "F1901M", "W1901A", "S1901R", "F1901R")
+static PyObject* game_set_phase(PyObject* self, PyObject* args) {
+    PyObject* handle_obj;
+    const char* phase_str;
+    if (!PyArg_ParseTuple(args, "Os", &handle_obj, &phase_str)) {
+        return NULL;
+    }
+    Env* env = (Env*)PyLong_AsVoidPtr(handle_obj);
+    if (!env || !env->game) {
+        PyErr_SetString(PyExc_ValueError, "Invalid env handle or game not initialized");
+        return NULL;
+    }
+
+    // Parse phase string (format: S1901M, F1901M, W1901A, S1901R, F1901R)
+    // First char: S=Spring, F=Fall, W=Winter
+    // Middle: year (e.g., 1901)
+    // Last char: M=Movement, R=Retreat, A=Adjustment
+    if (strlen(phase_str) < 3) {
+        PyErr_SetString(PyExc_ValueError, "Phase string too short");
+        return NULL;
+    }
+
+    char season = phase_str[0];
+    int year = atoi(phase_str + 1);
+    char phase_type = phase_str[strlen(phase_str) - 1];
+
+    // Determine phase enum
+    PhaseType phase;
+    if (season == 'S' || season == 's') {
+        if (phase_type == 'M' || phase_type == 'm') {
+            phase = PHASE_SPRING_MOVEMENT;
+        } else if (phase_type == 'R' || phase_type == 'r') {
+            phase = PHASE_SPRING_RETREAT;
+        } else {
+            PyErr_SetString(PyExc_ValueError, "Invalid phase type for Spring");
+            return NULL;
+        }
+    } else if (season == 'F' || season == 'f') {
+        if (phase_type == 'M' || phase_type == 'm') {
+            phase = PHASE_FALL_MOVEMENT;
+        } else if (phase_type == 'R' || phase_type == 'r') {
+            phase = PHASE_FALL_RETREAT;
+        } else {
+            PyErr_SetString(PyExc_ValueError, "Invalid phase type for Fall");
+            return NULL;
+        }
+    } else if (season == 'W' || season == 'w') {
+        if (phase_type == 'A' || phase_type == 'a') {
+            phase = PHASE_WINTER_ADJUSTMENT;
+        } else {
+            PyErr_SetString(PyExc_ValueError, "Invalid phase type for Winter");
+            return NULL;
+        }
+    } else {
+        PyErr_SetString(PyExc_ValueError, "Invalid season (expected S, F, or W)");
+        return NULL;
+    }
+
+    env->game->phase = phase;
+    env->game->year = year;
+
+    // Clear orders and dislodged units when phase changes
+    for (int p = 0; p < MAX_POWERS; p++) {
+        env->game->powers[p].num_orders = 0;
+    }
+    env->game->num_dislodged = 0;
+    env->game->num_combats = 0;
+
+    Py_RETURN_NONE;
+}
+
 // Define custom methods macro
 #define MY_METHODS \
     {"query_game_state", query_game_state, METH_VARARGS, "Query game state"}, \
@@ -552,7 +623,8 @@ static PyObject* get_order_unit_location(PyObject* self, PyObject* args) {
     {"list_possible_orders", list_possible_orders, METH_VARARGS, "List HOLD/MOVE orders for a unit"}, \
     {"get_num_orders", get_num_orders_binding, METH_VARARGS, "Get number of orders for a power"}, \
     {"get_order_result", get_order_result_binding, METH_VARARGS, "Get result code for an order (RESULT_SUCCESS, RESULT_BOUNCE, etc.)"}, \
-    {"get_order_unit_location", get_order_unit_location, METH_VARARGS, "Get the unit location index for an order (after coast normalization)"}
+    {"get_order_unit_location", get_order_unit_location, METH_VARARGS, "Get the unit location index for an order (after coast normalization)"}, \
+    {"game_set_phase", game_set_phase, METH_VARARGS, "Set game phase and year (e.g., S1901M, F1901R, W1901A)"}
 
 static PyObject* game_submit_orders(PyObject* self, PyObject* args) {
     PyObject* handle_obj;

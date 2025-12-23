@@ -87,7 +87,8 @@ class GameAdapter:
         return 'X'
 
     def set_current_phase(self, phase_str: str):
-        pass
+        """Set game phase and year (e.g., 'S1901M', 'F1901R', 'W1901A')"""
+        binding.game_set_phase(self.env.env_handle, phase_str)
 
     def get_all_possible_orders(self) -> Dict[str, List[str]]:
         raise NotImplementedError("Order generation not yet implemented in C")

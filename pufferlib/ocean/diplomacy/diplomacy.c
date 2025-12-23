@@ -1076,11 +1076,41 @@ static void collect_movement_orders(GameState* game, MoveAttempt* attempts, int*
                     attempt->is_valid = 1; // The attempt itself is now a valid action (either the original move or a hold)
 
                     // Check if this is a convoyed move (army with valid convoy path)
+                    // DATC 4.A.3: Adjacent moves - "kidnapping" rule
+                    // - If NOT adjacent: must use convoy
+                    // - If adjacent: only use convoy if SAME power offers it (voluntary)
                     if (attempt->to_location != -1 && order->unit_type == UNIT_ARMY) {
-                        // Check if there are convoy orders supporting this move
-                        if (is_convoyed_move(game, order->unit_location, order->target_location)) {
-                            // This move uses convoys (even if destination is adjacent)
-                            attempt->is_convoyed = 1;
+                        int can_move_directly = can_move(game->map, UNIT_ARMY,
+                                                         order->unit_location,
+                                                         order->target_location);
+
+                        if (!can_move_directly) {
+                            // Non-adjacent: must use convoy if path exists
+                            if (is_convoyed_move(game, order->unit_location, order->target_location)) {
+                                attempt->is_convoyed = 1;
+                            }
+                        } else {
+                            // Adjacent: check if SAME power offers convoy (voluntary convoy)
+                            // Only use convoy if own power has a fleet offering to convoy
+                            int own_convoy_exists = 0;
+                            for (int cp = 0; cp < MAX_POWERS; cp++) {
+                                if (cp != p) continue;  // Only check same power
+                                Power* convoy_power = &game->powers[cp];
+                                for (int co = 0; co < convoy_power->num_orders; co++) {
+                                    Order* convoy_order = &convoy_power->orders[co];
+                                    if (convoy_order->type == ORDER_CONVOY &&
+                                        convoy_order->target_unit_location == order->unit_location &&
+                                        convoy_order->dest_location == order->target_location) {
+                                        own_convoy_exists = 1;
+                                        break;
+                                    }
+                                }
+                                if (own_convoy_exists) break;
+                            }
+                            if (own_convoy_exists &&
+                                is_convoyed_move(game, order->unit_location, order->target_location)) {
+                                attempt->is_convoyed = 1;
+                            }
                         }
                     }
                 }
@@ -1831,32 +1861,42 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             continue;  // Destination occupied and not moving - convoy bounces
         }
 
-        // Check if we're the strongest attacker (among other convoyed moves and already-resolved moves)
+        // Check if we're the strongest attacker (among ALL moves to this destination)
         int is_strongest = 1;
         int max_str = attempt->attack_strength;
+        int num_at_max = 1;
+
+        // Check parent location for split coast comparison
+        int dest_parent = get_parent_location(game->map, destination);
 
         for (int j = 0; j < num_attempts; j++) {
             if (i == j) continue;
-            if (!attempts[j].is_valid || attempts[j].to_location != destination) {
+            if (!attempts[j].is_valid || attempts[j].to_location < 0) {
                 continue;
             }
 
-            // Check other convoyed moves
-            if (attempts[j].is_convoyed && !attempts[j].convoy_disrupted) {
-                if (attempts[j].attack_strength >= max_str) {
-                    is_strongest = 0;
-                    break;
-                }
+            // Compare parent locations for split coasts
+            int j_dest_parent = get_parent_location(game->map, attempts[j].to_location);
+            if (j_dest_parent != dest_parent) {
+                continue;
             }
-            // Check already-resolved non-convoyed moves
-            else if (!attempts[j].is_convoyed && attempts[j].can_move) {
-                // There's already a stronger move succeeding
+
+            // Check ALL moves targeting same destination (convoyed or not)
+            // Skip disrupted convoys - they're not competing
+            if (attempts[j].is_convoyed && attempts[j].convoy_disrupted) {
+                continue;
+            }
+
+            if (attempts[j].attack_strength > max_str) {
                 is_strongest = 0;
                 break;
+            } else if (attempts[j].attack_strength == max_str) {
+                num_at_max++;
             }
         }
 
-        if (is_strongest) {
+        // Only succeed if we're the unique strongest (no ties)
+        if (is_strongest && num_at_max == 1) {
             attempt->can_move = 1;
         }
     }
@@ -2016,13 +2056,16 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
         }
 
         if (order->type == ORDER_MOVE) {
-            // For moves, set the move result (bounce/success/void)
+            // For moves, set the move result (bounce/success/void/no_convoy)
             // Dislodgement will be added by adapter separately
             if (attempt->can_move && attempt->to_location != -1) {
                 order->result = RESULT_SUCCESS;
             } else if (attempt->to_location == -1) {
                 // Invalid move that was converted to hold
                 order->result = RESULT_VOID;
+            } else if (attempt->is_convoyed && attempt->convoy_disrupted) {
+                // Convoyed move failed because convoy was disrupted
+                order->result = RESULT_NO_CONVOY;
             } else {
                 // Move failed - bounced
                 order->result = RESULT_BOUNCE;
@@ -2523,6 +2566,7 @@ void resolve_retreat_phase(GameState* game) {
         game->last_num_orders[p] = power->num_orders;
         for (int o = 0; o < power->num_orders; o++) {
             game->last_results[p][o] = power->orders[o].result;
+            game->last_unit_locations[p][o] = power->orders[o].unit_location;
         }
     }
 }
@@ -2633,6 +2677,7 @@ void resolve_adjustment_phase(GameState* game) {
         game->last_num_orders[p] = power->num_orders;
         for (int o = 0; o < power->num_orders; o++) {
             game->last_results[p][o] = power->orders[o].result;
+            game->last_unit_locations[p][o] = power->orders[o].unit_location;
         }
     }
 
