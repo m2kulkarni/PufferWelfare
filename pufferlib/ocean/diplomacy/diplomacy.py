@@ -75,6 +75,9 @@ class Diplomacy(pufferlib.PufferEnv):
             # Backward compatibility if binding not yet exposes configure
             pass
 
+        # Renderer (lazy initialization)
+        self._renderer = None
+
     def reset(self, seed=None):
         """Reset the environment to initial state."""
         if seed is not None:
@@ -98,11 +101,28 @@ class Diplomacy(pufferlib.PufferEnv):
         return self.observations, self.rewards, self.terminals, self.truncations, []
 
     def render(self):
-        """Render the current game state."""
+        """Render the current game state.
+
+        Returns:
+            numpy array of RGB pixels if render_mode is 'rgb_array',
+            None otherwise.
+        """
         if self.render_mode == "human":
-            binding.env_render(self.env_handle)
+            if self._renderer is None:
+                from .render import DiplomacyRenderer
+                self._renderer = DiplomacyRenderer(self.env_handle)
+            return self._renderer.render()
+        elif self.render_mode == "rgb_array":
+            if self._renderer is None:
+                from .render import DiplomacyRenderer
+                self._renderer = DiplomacyRenderer(self.env_handle)
+            return self._renderer.render()
+        return None
 
     def close(self):
         """Clean up resources."""
+        if self._renderer is not None:
+            self._renderer.close()
+            self._renderer = None
         if hasattr(self, 'env_handle'):
             binding.env_close(self.env_handle)

@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 // Constants
-#define MAX_LOCATIONS 85       // 75 base locations + 6 split coast variants (BUL/EC, BUL/SC, SPA/NC, SPA/SC, STP/NC, STP/SC)
+#define MAX_LOCATIONS 82       // 76 base locations + 6 split coast variants (no lowercase duplicates)
 #define MAX_POWERS 7
 #define MAX_UNITS 34
 #define MAX_ADJACENCIES 20
@@ -70,7 +70,8 @@ typedef enum {
     RESULT_DISLODGED = 4,  // Unit was dislodged
     RESULT_VOID = 5,       // Order is invalid
     RESULT_FAILED = 6,     // Order failed (generic failure)
-    RESULT_NO_CONVOY = 7   // Convoy order failed (convoy disrupted or invalid)
+    RESULT_NO_CONVOY = 7,  // Convoy order failed (convoy disrupted or invalid)
+    RESULT_DISRUPTED = 8   // Convoy disrupted by paradox (fleet order was valid but paradox)
 } OrderResult;
 
 // Location structure
@@ -122,6 +123,7 @@ typedef struct {
     int dest_location;     // For support move (where supported unit is going)
     int power_id;          // Power giving order
     OrderResult result;    // Result of order after resolution
+    int explicit_convoy;   // 1 if "VIA" keyword used (forces convoy for adjacent moves)
 } Order;
 
 // Retreat option
@@ -264,8 +266,6 @@ void resolve_retreat_phase(GameState* game);
 void resolve_adjustment_phase(GameState* game);
 void advance_phase(GameState* game);
 
-// Welfare Diplomacy specific
-void calculate_welfare_points(GameState* game);
 
 // Game state query functions (for testing)
 int get_current_year(GameState* game);
@@ -284,7 +284,6 @@ OrderResult get_order_result(GameState* game, int power_id, int order_idx);
 
 // Utility functions
 const char* phase_to_string(PhaseType phase);
-const char* unit_type_to_string(UnitType type);
 int find_location_by_name(Map* map, const char* name);
 int get_unit_at_location(GameState* game, int location);
 int can_move(Map* map, UnitType unit_type, int from_loc, int to_loc);
@@ -292,7 +291,6 @@ int can_move(Map* map, UnitType unit_type, int from_loc, int to_loc);
 // Coast handling functions
 void find_coasts(Map* map, int loc_idx, int* coasts, int* num_coasts);
 int default_coast(Map* map, int from_loc, const char* dest_name);
-int is_coast_required(Map* map, int loc_idx);
 int get_parent_location(Map* map, int loc_idx);
 
 // Convoy functions

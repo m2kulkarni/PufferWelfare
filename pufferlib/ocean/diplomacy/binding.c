@@ -7,7 +7,6 @@
 
 // Implementation of environment-specific init function
 static int my_init(Env* env, PyObject* args, PyObject* kwargs) {
-    static char *kwlist[] = {"welfare_mode", "max_years", NULL};
     int welfare_mode = 1;
     int max_years = 10;
 
@@ -667,26 +666,29 @@ static PyObject* game_submit_orders(PyObject* self, PyObject* args) {
 
             // DATC 6.B.10: Normalize coast variants - if order specifies wrong coast,
             // find the correct coast where the unit actually is
-            int unit_found = 0;
-            for (int u = 0; u < power->num_units; u++) {
-                if (power->units[u].location == order.unit_location &&
-                    power->units[u].type == order.unit_type) {
-                    unit_found = 1;
-                    break;
+            // Note: Skip for BUILD/DISBAND orders - these use the specified location as-is
+            if (order.type != ORDER_BUILD && order.type != ORDER_DISBAND) {
+                int unit_found = 0;
+                for (int u = 0; u < power->num_units; u++) {
+                    if (power->units[u].location == order.unit_location &&
+                        power->units[u].type == order.unit_type) {
+                        unit_found = 1;
+                        break;
+                    }
                 }
-            }
 
-            // If unit not found at specified location, check other coasts of same parent
-            if (!unit_found) {
-                int parent_loc = get_parent_location(env->game->map, order.unit_location);
-                if (parent_loc != order.unit_location) {
-                    // This is a coast variant - search for unit at other coasts
-                    for (int u = 0; u < power->num_units; u++) {
-                        int unit_parent = get_parent_location(env->game->map, power->units[u].location);
-                        if (unit_parent == parent_loc && power->units[u].type == order.unit_type) {
-                            // Found unit at different coast of same parent - use that location
-                            order.unit_location = power->units[u].location;
-                            break;
+                // If unit not found at specified location, check other coasts of same parent
+                if (!unit_found) {
+                    int parent_loc = get_parent_location(env->game->map, order.unit_location);
+                    if (parent_loc != order.unit_location) {
+                        // This is a coast variant - search for unit at other coasts
+                        for (int u = 0; u < power->num_units; u++) {
+                            int unit_parent = get_parent_location(env->game->map, power->units[u].location);
+                            if (unit_parent == parent_loc && power->units[u].type == order.unit_type) {
+                                // Found unit at different coast of same parent - use that location
+                                order.unit_location = power->units[u].location;
+                                break;
+                            }
                         }
                     }
                 }

@@ -25,7 +25,7 @@ void init_standard_map(Map* map) {
     strcpy(map->power_abbrev[6], "T");
 
     // Initialize all locations (generated from standard.map)
-    map->num_locations = 85;  // 76 original + 9 split coast variants
+    map->num_locations = 82;  // 76 base + 6 coast variants (no lowercase duplicates)
 
     // Initialize new coast fields for all locations (default: not a coast variant)
     for (int i = 0; i < MAX_LOCATIONS; i++) {
@@ -51,7 +51,7 @@ void init_standard_map(Map* map) {
     map->locations[1].has_supply_center = 0;
     map->locations[1].owner_power = -1;  // Neutral initially
     map->locations[1].num_adjacent = 6;
-    map->locations[1].adjacencies[0] = 78;  // BUL/SC (was 15 BUL)
+    map->locations[1].adjacencies[0] = 77;  // BUL/SC
     map->locations[1].adjacencies[1] = 18;
     map->locations[1].adjacencies[2] = 20;
     map->locations[1].adjacencies[3] = 26;
@@ -127,7 +127,7 @@ void init_standard_map(Map* map) {
     map->locations[7].num_adjacent = 3;
     map->locations[7].adjacencies[0] = 45;
     map->locations[7].adjacencies[1] = 44;
-    map->locations[7].adjacencies[2] = 83;  // STP/NC (was 60 STP)
+    map->locations[7].adjacencies[2] = 80;  // STP/NC
 
     // 8: BEL
     strcpy(map->locations[8].name, "BEL");
@@ -162,7 +162,7 @@ void init_standard_map(Map* map) {
     map->locations[10].num_adjacent = 6;
     map->locations[10].adjacencies[0] = 3;
     map->locations[10].adjacencies[1] = 5;
-    map->locations[10].adjacencies[2] = 77;  // BUL/EC (was 15 BUL)
+    map->locations[10].adjacencies[2] = 76;  // BUL/EC
     map->locations[10].adjacencies[3] = 18;
     map->locations[10].adjacencies[4] = 53;
     map->locations[10].adjacencies[5] = 55;
@@ -188,7 +188,7 @@ void init_standard_map(Map* map) {
     map->locations[12].adjacencies[0] = 6;
     map->locations[12].adjacencies[1] = 23;
     map->locations[12].adjacencies[2] = 33;
-    map->locations[12].adjacencies[3] = 84;  // STP/SC (was 60 STP)
+    map->locations[12].adjacencies[3] = 81;  // STP/SC
     map->locations[12].adjacencies[4] = 61;
 
     // 13: BRE
@@ -215,13 +215,18 @@ void init_standard_map(Map* map) {
     map->locations[14].adjacencies[3] = 64;
     map->locations[14].adjacencies[4] = 71;
 
-    // 15: BUL (parent location - supply center only, no direct movement)
+    // 15: BUL (parent location with full land adjacencies)
     strcpy(map->locations[15].name, "BUL");
-    map->locations[15].type = LOC_COAST;
+    map->locations[15].type = LOC_PORT;  // PORT allows both army and fleet
     map->locations[15].has_supply_center = 1;
     map->locations[15].owner_power = -1;  // Neutral initially
-    map->locations[15].num_adjacent = 0;  // No adjacencies - use coast variants instead
-    // Adjacencies removed - units must be on specific coasts (bul, BUL/EC, BUL/SC)
+    map->locations[15].num_adjacent = 6;
+    map->locations[15].adjacencies[0] = 1;   // AEG
+    map->locations[15].adjacencies[1] = 10;  // BLA
+    map->locations[15].adjacencies[2] = 18;  // CON
+    map->locations[15].adjacencies[3] = 26;  // GRE
+    map->locations[15].adjacencies[4] = 53;  // RUM
+    map->locations[15].adjacencies[5] = 54;  // SER
 
     // 16: BUR
     strcpy(map->locations[16].name, "BUR");
@@ -254,13 +259,14 @@ void init_standard_map(Map* map) {
     map->locations[18].type = LOC_COAST;
     map->locations[18].has_supply_center = 1;
     map->locations[18].owner_power = -1;  // Neutral initially
-    map->locations[18].num_adjacent = 6;
+    map->locations[18].num_adjacent = 7;
     map->locations[18].adjacencies[0] = 1;
-    map->locations[18].adjacencies[1] = 77;  // BUL/EC (was 15 BUL)
-    map->locations[18].adjacencies[2] = 78;  // BUL/SC (was 15 BUL)
-    map->locations[18].adjacencies[3] = 10;
-    map->locations[18].adjacencies[4] = 3;
-    map->locations[18].adjacencies[5] = 58;
+    map->locations[18].adjacencies[1] = 15;  // BUL (parent)
+    map->locations[18].adjacencies[2] = 76;  // BUL/EC
+    map->locations[18].adjacencies[3] = 77;  // BUL/SC
+    map->locations[18].adjacencies[4] = 10;
+    map->locations[18].adjacencies[5] = 3;
+    map->locations[18].adjacencies[6] = 58;
 
     // 19: DEN
     strcpy(map->locations[19].name, "DEN");
@@ -318,12 +324,12 @@ void init_standard_map(Map* map) {
     map->locations[23].type = LOC_COAST;
     map->locations[23].has_supply_center = 0;
     map->locations[23].owner_power = -1;  // Neutral initially
-    map->locations[23].num_adjacent = 5;  // Increased from 4 for split coasts
+    map->locations[23].num_adjacent = 5;
     map->locations[23].adjacencies[0] = 12;
     map->locations[23].adjacencies[1] = 45;
-    map->locations[23].adjacencies[2] = 84;  // STP/SC (was 60 STP)
-    map->locations[23].adjacencies[3] = 61;
-    map->locations[23].adjacencies[4] = 82;  // stp land
+    map->locations[23].adjacencies[2] = 60;  // STP (parent)
+    map->locations[23].adjacencies[3] = 81;  // STP/SC
+    map->locations[23].adjacencies[4] = 61;
 
     // 24: GAL
     strcpy(map->locations[24].name, "GAL");
@@ -344,26 +350,27 @@ void init_standard_map(Map* map) {
     map->locations[25].type = LOC_COAST;
     map->locations[25].has_supply_center = 0;
     map->locations[25].owner_power = -1;  // Neutral initially
-    map->locations[25].num_adjacent = 7;  // Increased from 6 for split coasts
+    map->locations[25].num_adjacent = 7;
     map->locations[25].adjacencies[0] = 16;
     map->locations[25].adjacencies[1] = 13;
     map->locations[25].adjacencies[2] = 36;
     map->locations[25].adjacencies[3] = 37;
     map->locations[25].adjacencies[4] = 46;
-    map->locations[25].adjacencies[5] = 80;  // SPA/NC (was 59 SPA)
-    map->locations[25].adjacencies[6] = 79;  // spa land
+    map->locations[25].adjacencies[5] = 59;  // SPA (parent)
+    map->locations[25].adjacencies[6] = 78;  // SPA/NC
 
     // 26: GRE
     strcpy(map->locations[26].name, "GRE");
     map->locations[26].type = LOC_COAST;
     map->locations[26].has_supply_center = 1;
     map->locations[26].owner_power = -1;  // Neutral initially
-    map->locations[26].num_adjacent = 5;
+    map->locations[26].num_adjacent = 6;
     map->locations[26].adjacencies[0] = 1;
     map->locations[26].adjacencies[1] = 2;
-    map->locations[26].adjacencies[2] = 78;  // BUL/SC (was 15 BUL)
-    map->locations[26].adjacencies[3] = 29;
-    map->locations[26].adjacencies[4] = 54;
+    map->locations[26].adjacencies[2] = 15;  // BUL (parent)
+    map->locations[26].adjacencies[3] = 77;  // BUL/SC
+    map->locations[26].adjacencies[4] = 29;
+    map->locations[26].adjacencies[5] = 54;
 
     // 27: HEL
     strcpy(map->locations[27].name, "HEL");
@@ -446,14 +453,14 @@ void init_standard_map(Map* map) {
     map->locations[33].type = LOC_COAST;
     map->locations[33].has_supply_center = 0;
     map->locations[33].owner_power = -1;  // Neutral initially
-    map->locations[33].num_adjacent = 7;  // Increased from 6 for split coasts
+    map->locations[33].num_adjacent = 7;
     map->locations[33].adjacencies[0] = 6;
     map->locations[33].adjacencies[1] = 12;
     map->locations[33].adjacencies[2] = 38;
     map->locations[33].adjacencies[3] = 50;
-    map->locations[33].adjacencies[4] = 84;  // STP/SC (was 60 STP)
-    map->locations[33].adjacencies[5] = 73;
-    map->locations[33].adjacencies[6] = 82;  // stp land
+    map->locations[33].adjacencies[4] = 60;  // STP (parent)
+    map->locations[33].adjacencies[5] = 81;  // STP/SC
+    map->locations[33].adjacencies[6] = 73;
 
     // 34: LVP
     strcpy(map->locations[34].name, "LVP");
@@ -476,7 +483,7 @@ void init_standard_map(Map* map) {
     map->locations[35].num_adjacent = 6;
     map->locations[35].adjacencies[0] = 37;
     map->locations[35].adjacencies[1] = 48;
-    map->locations[35].adjacencies[2] = 81;  // SPA/SC (was 59 SPA)
+    map->locations[35].adjacencies[2] = 79;  // SPA/SC
     map->locations[35].adjacencies[3] = 66;
     map->locations[35].adjacencies[4] = 68;
     map->locations[35].adjacencies[5] = 74;
@@ -494,8 +501,8 @@ void init_standard_map(Map* map) {
     map->locations[36].adjacencies[4] = 40;
     map->locations[36].adjacencies[5] = 41;
     map->locations[36].adjacencies[6] = 49;
-    map->locations[36].adjacencies[7] = 80;  // SPA/NC (was 59 SPA)
-    map->locations[36].adjacencies[8] = 81;  // SPA/SC (was 59 SPA)
+    map->locations[36].adjacencies[7] = 78;  // SPA/NC
+    map->locations[36].adjacencies[8] = 79;  // SPA/SC
     map->locations[36].adjacencies[9] = 74;
 
     // 37: MAR
@@ -503,14 +510,14 @@ void init_standard_map(Map* map) {
     map->locations[37].type = LOC_COAST;
     map->locations[37].has_supply_center = 1;
     map->locations[37].owner_power = -1;  // Neutral initially
-    map->locations[37].num_adjacent = 7;  // Increased from 6 for split coasts
+    map->locations[37].num_adjacent = 7;
     map->locations[37].adjacencies[0] = 16;
     map->locations[37].adjacencies[1] = 25;
     map->locations[37].adjacencies[2] = 35;
     map->locations[37].adjacencies[3] = 48;
-    map->locations[37].adjacencies[4] = 81;  // SPA/SC (was 59 SPA)
-    map->locations[37].adjacencies[5] = 62;
-    map->locations[37].adjacencies[6] = 79;  // spa land
+    map->locations[37].adjacencies[4] = 59;  // SPA (parent)
+    map->locations[37].adjacencies[5] = 79;  // SPA/SC
+    map->locations[37].adjacencies[6] = 62;
 
     // 38: MOS
     strcpy(map->locations[38].name, "MOS");
@@ -520,7 +527,7 @@ void init_standard_map(Map* map) {
     map->locations[38].num_adjacent = 5;
     map->locations[38].adjacencies[0] = 33;
     map->locations[38].adjacencies[1] = 55;
-    map->locations[38].adjacencies[2] = 82;  // stp land (was 60 STP)
+    map->locations[38].adjacencies[2] = 60;  // STP
     map->locations[38].adjacencies[3] = 69;
     map->locations[38].adjacencies[4] = 73;
 
@@ -608,15 +615,15 @@ void init_standard_map(Map* map) {
     map->locations[45].type = LOC_COAST;
     map->locations[45].has_supply_center = 1;
     map->locations[45].owner_power = -1;  // Neutral initially
-    map->locations[45].num_adjacent = 8;  // Increased from 7 for split coasts
+    map->locations[45].num_adjacent = 8;
     map->locations[45].adjacencies[0] = 7;
     map->locations[45].adjacencies[1] = 23;
     map->locations[45].adjacencies[2] = 43;
     map->locations[45].adjacencies[3] = 44;
     map->locations[45].adjacencies[4] = 57;
-    map->locations[45].adjacencies[5] = 83;  // STP/NC (was 60 STP)
-    map->locations[45].adjacencies[6] = 61;
-    map->locations[45].adjacencies[7] = 82;  // stp land
+    map->locations[45].adjacencies[5] = 60;  // STP (parent)
+    map->locations[45].adjacencies[6] = 80;  // STP/NC
+    map->locations[45].adjacencies[7] = 61;
 
     // 46: PAR
     strcpy(map->locations[46].name, "PAR");
@@ -659,10 +666,11 @@ void init_standard_map(Map* map) {
     map->locations[49].type = LOC_COAST;
     map->locations[49].has_supply_center = 1;
     map->locations[49].owner_power = -1;  // Neutral initially
-    map->locations[49].num_adjacent = 3;
+    map->locations[49].num_adjacent = 4;
     map->locations[49].adjacencies[0] = 36;
-    map->locations[49].adjacencies[1] = 80;  // SPA/NC (was 59 SPA)
-    map->locations[49].adjacencies[2] = 81;  // SPA/SC (was 59 SPA)
+    map->locations[49].adjacencies[1] = 59;  // SPA (parent)
+    map->locations[49].adjacencies[2] = 78;  // SPA/NC
+    map->locations[49].adjacencies[3] = 79;  // SPA/SC
 
     // 50: PRU
     strcpy(map->locations[50].name, "PRU");
@@ -705,14 +713,15 @@ void init_standard_map(Map* map) {
     map->locations[53].type = LOC_COAST;
     map->locations[53].has_supply_center = 1;
     map->locations[53].owner_power = -1;  // Neutral initially
-    map->locations[53].num_adjacent = 7;
+    map->locations[53].num_adjacent = 8;
     map->locations[53].adjacencies[0] = 10;
     map->locations[53].adjacencies[1] = 14;
-    map->locations[53].adjacencies[2] = 77;  // BUL/EC (was 15 BUL)
-    map->locations[53].adjacencies[3] = 24;
-    map->locations[53].adjacencies[4] = 54;
-    map->locations[53].adjacencies[5] = 55;
-    map->locations[53].adjacencies[6] = 69;
+    map->locations[53].adjacencies[2] = 15;  // BUL (parent)
+    map->locations[53].adjacencies[3] = 76;  // BUL/EC
+    map->locations[53].adjacencies[4] = 24;
+    map->locations[53].adjacencies[5] = 54;
+    map->locations[53].adjacencies[6] = 55;
+    map->locations[53].adjacencies[7] = 69;
 
     // 54: SER
     strcpy(map->locations[54].name, "SER");
@@ -722,7 +731,7 @@ void init_standard_map(Map* map) {
     map->locations[54].num_adjacent = 6;
     map->locations[54].adjacencies[0] = 2;
     map->locations[54].adjacencies[1] = 14;
-    map->locations[54].adjacencies[2] = 76;  // bul land (was 15 BUL)
+    map->locations[54].adjacencies[2] = 15;  // BUL
     map->locations[54].adjacencies[3] = 26;
     map->locations[54].adjacencies[4] = 53;
     map->locations[54].adjacencies[5] = 64;
@@ -776,21 +785,29 @@ void init_standard_map(Map* map) {
     map->locations[58].adjacencies[4] = 20;
     map->locations[58].adjacencies[5] = 63;
 
-    // 59: SPA (parent location - supply center only, no direct movement)
+    // 59: SPA (parent location with full land adjacencies)
     strcpy(map->locations[59].name, "SPA");
-    map->locations[59].type = LOC_COAST;
+    map->locations[59].type = LOC_PORT;  // PORT allows both army and fleet
     map->locations[59].has_supply_center = 1;
     map->locations[59].owner_power = -1;  // Neutral initially
-    map->locations[59].num_adjacent = 0;  // No adjacencies - use coast variants instead
-    // Adjacencies removed - units must be on specific coasts (spa, SPA/NC, SPA/SC)
+    map->locations[59].num_adjacent = 4;
+    map->locations[59].adjacencies[0] = 25;  // GAS
+    map->locations[59].adjacencies[1] = 35;  // LYO
+    map->locations[59].adjacencies[2] = 37;  // MAR
+    map->locations[59].adjacencies[3] = 49;  // POR
 
-    // 60: STP (parent location - supply center only, no direct movement)
+    // 60: STP (parent location with full land adjacencies)
     strcpy(map->locations[60].name, "STP");
-    map->locations[60].type = LOC_COAST;
+    map->locations[60].type = LOC_PORT;  // PORT allows both army and fleet
     map->locations[60].has_supply_center = 1;  // STP is a supply center (Russia home)
     map->locations[60].owner_power = -1;  // Neutral initially
-    map->locations[60].num_adjacent = 0;  // No adjacencies - use coast variants instead
-    // Adjacencies removed - units must be on specific coasts (stp, STP/NC, STP/SC)
+    map->locations[60].num_adjacent = 6;
+    map->locations[60].adjacencies[0] = 7;   // BAR
+    map->locations[60].adjacencies[1] = 12;  // BOT
+    map->locations[60].adjacencies[2] = 23;  // FIN
+    map->locations[60].adjacencies[3] = 33;  // LVN
+    map->locations[60].adjacencies[4] = 38;  // MOS
+    map->locations[60].adjacencies[5] = 45;  // NWY
 
     // 61: SWE
     strcpy(map->locations[61].name, "SWE");
@@ -964,7 +981,7 @@ void init_standard_map(Map* map) {
     map->locations[74].adjacencies[0] = 36;
     map->locations[74].adjacencies[1] = 35;
     map->locations[74].adjacencies[2] = 40;
-    map->locations[74].adjacencies[3] = 81;  // SPA/SC (was 59 SPA)
+    map->locations[74].adjacencies[3] = 79;  // SPA/SC
     map->locations[74].adjacencies[4] = 65;
     map->locations[74].adjacencies[5] = 68;
 
@@ -980,123 +997,82 @@ void init_standard_map(Map* map) {
     map->locations[75].adjacencies[3] = 43;
     map->locations[75].adjacencies[4] = 72;
 
-    // ===== SPLIT COAST LOCATIONS =====
+    // ===== SPLIT COAST VARIANTS (for fleet-specific movement) =====
+    // Parent locations (BUL, SPA, STP) now have full adjacencies above.
+    // These coast variants are only needed for fleet moves to specific coasts.
 
-    // 76: bul (generic land connection for armies)
-    strcpy(map->locations[76].name, "bul");
-    map->locations[76].type = LOC_LAND;
-    map->locations[76].has_supply_center = 0;  // SC is on the main location (15)
+    // 76: BUL/EC (Bulgaria East Coast)
+    strcpy(map->locations[76].name, "BUL/EC");
+    map->locations[76].type = LOC_COAST;
+    map->locations[76].has_supply_center = 0;
     map->locations[76].owner_power = -1;
-    map->locations[76].num_adjacent = 6;
-    map->locations[76].adjacencies[0] = 1;   // AEG
-    map->locations[76].adjacencies[1] = 10;  // BLA
-    map->locations[76].adjacencies[2] = 18;  // CON
-    map->locations[76].adjacencies[3] = 26;  // GRE
-    map->locations[76].adjacencies[4] = 53;  // RUM
-    map->locations[76].adjacencies[5] = 54;  // SER
+    map->locations[76].num_adjacent = 3;
+    map->locations[76].adjacencies[0] = 10;  // BLA
+    map->locations[76].adjacencies[1] = 18;  // CON
+    map->locations[76].adjacencies[2] = 53;  // RUM
     map->locations[76].parent_location = 15; // BUL
-    map->locations[76].coast_type = COAST_GENERIC;
+    map->locations[76].coast_type = COAST_EAST;
 
-    // 77: BUL/EC (Bulgaria East Coast)
-    strcpy(map->locations[77].name, "BUL/EC");
+    // 77: BUL/SC (Bulgaria South Coast)
+    strcpy(map->locations[77].name, "BUL/SC");
     map->locations[77].type = LOC_COAST;
     map->locations[77].has_supply_center = 0;
     map->locations[77].owner_power = -1;
     map->locations[77].num_adjacent = 3;
-    map->locations[77].adjacencies[0] = 10;  // BLA
+    map->locations[77].adjacencies[0] = 1;   // AEG
     map->locations[77].adjacencies[1] = 18;  // CON
-    map->locations[77].adjacencies[2] = 53;  // RUM
+    map->locations[77].adjacencies[2] = 26;  // GRE
     map->locations[77].parent_location = 15; // BUL
-    map->locations[77].coast_type = COAST_EAST;
+    map->locations[77].coast_type = COAST_SOUTH;
 
-    // 78: BUL/SC (Bulgaria South Coast)
-    strcpy(map->locations[78].name, "BUL/SC");
+    // 78: SPA/NC (Spain North Coast)
+    strcpy(map->locations[78].name, "SPA/NC");
     map->locations[78].type = LOC_COAST;
     map->locations[78].has_supply_center = 0;
     map->locations[78].owner_power = -1;
     map->locations[78].num_adjacent = 3;
-    map->locations[78].adjacencies[0] = 1;   // AEG
-    map->locations[78].adjacencies[1] = 18;  // CON
-    map->locations[78].adjacencies[2] = 26;  // GRE
-    map->locations[78].parent_location = 15; // BUL
-    map->locations[78].coast_type = COAST_SOUTH;
+    map->locations[78].adjacencies[0] = 25;  // GAS
+    map->locations[78].adjacencies[1] = 36;  // MAO
+    map->locations[78].adjacencies[2] = 49;  // POR
+    map->locations[78].parent_location = 59; // SPA
+    map->locations[78].coast_type = COAST_NORTH;
 
-    // 79: spa (generic land connection for armies)
-    strcpy(map->locations[79].name, "spa");
-    map->locations[79].type = LOC_LAND;
-    map->locations[79].has_supply_center = 0;  // SC is on the main location (59)
+    // 79: SPA/SC (Spain South Coast)
+    strcpy(map->locations[79].name, "SPA/SC");
+    map->locations[79].type = LOC_COAST;
+    map->locations[79].has_supply_center = 0;
     map->locations[79].owner_power = -1;
-    map->locations[79].num_adjacent = 4;
-    map->locations[79].adjacencies[0] = 25;  // GAS
-    map->locations[79].adjacencies[1] = 35;  // LYO
+    map->locations[79].num_adjacent = 5;
+    map->locations[79].adjacencies[0] = 35;  // LYO
+    map->locations[79].adjacencies[1] = 36;  // MAO
     map->locations[79].adjacencies[2] = 37;  // MAR
     map->locations[79].adjacencies[3] = 49;  // POR
+    map->locations[79].adjacencies[4] = 74;  // WES
     map->locations[79].parent_location = 59; // SPA
-    map->locations[79].coast_type = COAST_GENERIC;
+    map->locations[79].coast_type = COAST_SOUTH;
 
-    // 80: SPA/NC (Spain North Coast)
-    strcpy(map->locations[80].name, "SPA/NC");
+    // 80: STP/NC (St Petersburg North Coast)
+    strcpy(map->locations[80].name, "STP/NC");
     map->locations[80].type = LOC_COAST;
     map->locations[80].has_supply_center = 0;
     map->locations[80].owner_power = -1;
-    map->locations[80].num_adjacent = 3;
-    map->locations[80].adjacencies[0] = 25;  // GAS
-    map->locations[80].adjacencies[1] = 36;  // MAO
-    map->locations[80].adjacencies[2] = 49;  // POR
-    map->locations[80].parent_location = 59; // SPA
+    map->locations[80].num_adjacent = 2;
+    map->locations[80].adjacencies[0] = 7;   // BAR
+    map->locations[80].adjacencies[1] = 45;  // NWY
+    map->locations[80].parent_location = 60; // STP
     map->locations[80].coast_type = COAST_NORTH;
 
-    // 81: SPA/SC (Spain South Coast)
-    strcpy(map->locations[81].name, "SPA/SC");
+    // 81: STP/SC (St Petersburg South Coast)
+    strcpy(map->locations[81].name, "STP/SC");
     map->locations[81].type = LOC_COAST;
     map->locations[81].has_supply_center = 0;
     map->locations[81].owner_power = -1;
-    map->locations[81].num_adjacent = 5;
-    map->locations[81].adjacencies[0] = 35;  // LYO
-    map->locations[81].adjacencies[1] = 36;  // MAO
-    map->locations[81].adjacencies[2] = 37;  // MAR
-    map->locations[81].adjacencies[3] = 49;  // POR
-    map->locations[81].adjacencies[4] = 74;  // WES
-    map->locations[81].parent_location = 59; // SPA
+    map->locations[81].num_adjacent = 3;
+    map->locations[81].adjacencies[0] = 12;  // BOT
+    map->locations[81].adjacencies[1] = 23;  // FIN
+    map->locations[81].adjacencies[2] = 33;  // LVN
+    map->locations[81].parent_location = 60; // STP
     map->locations[81].coast_type = COAST_SOUTH;
-
-    // 82: stp (generic land connection for armies)
-    strcpy(map->locations[82].name, "stp");
-    map->locations[82].type = LOC_LAND;
-    map->locations[82].has_supply_center = 0;  // SC is on the main location (60)
-    map->locations[82].owner_power = -1;
-    map->locations[82].num_adjacent = 6;
-    map->locations[82].adjacencies[0] = 7;   // BAR
-    map->locations[82].adjacencies[1] = 12;  // BOT
-    map->locations[82].adjacencies[2] = 23;  // FIN
-    map->locations[82].adjacencies[3] = 33;  // LVN
-    map->locations[82].adjacencies[4] = 38;  // MOS
-    map->locations[82].adjacencies[5] = 45;  // NWY
-    map->locations[82].parent_location = 60; // STP
-    map->locations[82].coast_type = COAST_GENERIC;
-
-    // 83: STP/NC (St Petersburg North Coast)
-    strcpy(map->locations[83].name, "STP/NC");
-    map->locations[83].type = LOC_COAST;
-    map->locations[83].has_supply_center = 0;
-    map->locations[83].owner_power = -1;
-    map->locations[83].num_adjacent = 2;
-    map->locations[83].adjacencies[0] = 7;   // BAR
-    map->locations[83].adjacencies[1] = 45;  // NWY
-    map->locations[83].parent_location = 60; // STP
-    map->locations[83].coast_type = COAST_NORTH;
-
-    // 84: STP/SC (St Petersburg South Coast)
-    strcpy(map->locations[84].name, "STP/SC");
-    map->locations[84].type = LOC_COAST;
-    map->locations[84].has_supply_center = 0;
-    map->locations[84].owner_power = -1;
-    map->locations[84].num_adjacent = 3;
-    map->locations[84].adjacencies[0] = 12;  // BOT
-    map->locations[84].adjacencies[1] = 23;  // FIN
-    map->locations[84].adjacencies[2] = 33;  // LVN
-    map->locations[84].parent_location = 60; // STP
-    map->locations[84].coast_type = COAST_SOUTH;
 
 
     // Home center assignments
@@ -1172,8 +1148,7 @@ void init_standard_map(Map* map) {
     map->locations[45].is_home_center = 6;
     map->num_homes[6] = 17;
 
-    // TODO MOHIT: Why are we doing SET_HOME like this? do we need this?
-    // Override and correct home center assignments and supply centers
+    // The code above sets incorrect home centers. Reset and use proper name-based lookup.
     // Reset all is_home_center to -1
     for (int i = 0; i < map->num_locations; i++) {
         map->locations[i].is_home_center = -1;
@@ -1233,15 +1208,18 @@ void init_standard_map(Map* map) {
             int to = from_loc->adjacencies[adj_idx];
             Location* to_loc = &map->locations[to];
 
-            // ARMY can move: LAND<->LAND, LAND<->COAST, COAST<->COAST
+            // ARMY can move: LAND<->LAND, LAND<->COAST, COAST<->COAST, PORT<->*
             // (basically, if neither is pure water)
             if (from_loc->type != LOC_WATER && to_loc->type != LOC_WATER) {
                 map->adjacency_cache[UNIT_ARMY][from][to] = 1;
             }
 
             // FLEET can move: WATER<->WATER, WATER<->COAST
+            // Fleets CANNOT move to/from LOC_PORT directly (must use coast variants)
             // For COAST<->COAST, they must share a water neighbor (sea connection)
-            if (from_loc->type == LOC_WATER || to_loc->type == LOC_WATER) {
+            if (from_loc->type == LOC_PORT || to_loc->type == LOC_PORT) {
+                // Skip - fleets must use specific coast variants, not parent locations
+            } else if (from_loc->type == LOC_WATER || to_loc->type == LOC_WATER) {
                 // At least one is water - fleets can move
                 map->adjacency_cache[UNIT_FLEET][from][to] = 1;
             } else if (from_loc->type == LOC_COAST && to_loc->type == LOC_COAST) {

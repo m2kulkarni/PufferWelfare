@@ -4,9 +4,9 @@
 
 Porting welfare-diplomacy from Python to C for PufferLib, achieving 10-100x speedup while maintaining exact functional equivalence.
 
-**Current**: 103/160 DATC tests passing (64.4%) - Updated Dec 22, 2025
-**Previous**: 87/160 (54.4%)
-**Session Gain**: +16 tests
+**Current**: 109/160 DATC tests passing (68.1%) - Updated Dec 27, 2025
+**Previous**: 103/160 (64.4%)
+**Session Gain**: +6 tests (split coast architecture fix)
 **Goal**: 120 tests (75%) -> 150+ tests -> 160/160 (100%)
 
 ## Architecture

@@ -1,6 +1,9 @@
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 import numpy as np
 from pufferlib.ocean.diplomacy import Diplomacy, binding
+
+
+POWER_NAMES = ["AUSTRIA", "ENGLAND", "FRANCE", "GERMANY", "ITALY", "RUSSIA", "TURKEY"]
 
 
 class _History:
@@ -43,7 +46,7 @@ class GameAdapter:
         binding.game_clear_centers(self.env.env_handle)
 
     def set_units(self, power: str, units):
-        power_idx = ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"].index(power.upper())
+        power_idx = POWER_NAMES.index(power.upper())
         if isinstance(units, str):
             units = [units] if units.strip() else []
         elif not isinstance(units, list):
@@ -60,7 +63,7 @@ class GameAdapter:
         binding.game_set_units(self.env.env_handle, power_idx, norm)
 
     def set_centers(self, power: str, centers):
-        power_idx = ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"].index(power.upper())
+        power_idx = POWER_NAMES.index(power.upper())
         if isinstance(centers, str):
             centers = [centers]
         centers = [c.upper() for c in centers]
@@ -109,7 +112,6 @@ class GameAdapter:
 
     def _get_results(self, orders_submitted, dislodged_before_step=None, phase_before_step=None):
         results = {}
-        power_names = ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"]
 
         # Use phase before step if provided, otherwise get current phase
         if phase_before_step is not None:
@@ -136,8 +138,13 @@ class GameAdapter:
                 loc_name = idx_to_name[location]
                 dislodged_units.add(f"{unit_type_str} {loc_name}")
 
+        # For adjustment phase, results are accumulated differently:
+        # Each order result is an element: [] for success, 'void' for void
+        # Multiple orders for same unit create list like ['void', []]
+        is_adjustment_phase = current_phase == 4  # PHASE_WINTER_ADJUSTMENT
+
         for pname, orders in orders_submitted.items():
-            pidx = power_names.index(pname)
+            pidx = POWER_NAMES.index(pname)
             num_orders = binding.get_num_orders(self.env.env_handle, pidx)
 
             for order_idx in range(num_orders):
@@ -158,27 +165,46 @@ class GameAdapter:
                         # Check if this is a retreat order (contains 'R' after unit)
                         is_retreat_order = len(parts) >= 3 and parts[2] == 'R'
 
-                        # Build result list based on result code
-                        result_list = []
-                        if result_code == 1: result_list = []  # Success
-                        elif result_code == 2: result_list = ['bounce']
-                        elif result_code == 3: result_list = ['cut']
-                        elif result_code == 4: result_list = ['dislodged']
-                        elif result_code == 5: result_list = ['void']
-                        elif result_code == 6: result_list = ['bounce']
-                        elif result_code == 7: result_list = ['no convoy']
-                        else: result_list = []
+                        if is_adjustment_phase:
+                            # Adjustment phase: each order result is an element in a list
+                            # Success = [], Void = 'void'
+                            if result_code == 1:  # SUCCESS
+                                result_elem = []
+                            elif result_code == 5:  # VOID
+                                result_elem = 'void'
+                            else:
+                                result_elem = []
 
-                        # If unit was dislodged during MOVEMENT phase, add 'dislodged' if not already present
-                        # Note: Don't add 'dislodged' during retreat phase - that's for movement phase only
-                        if current_phase in (0, 2) and unit_key in dislodged_units and 'dislodged' not in result_list:
-                            result_list.append('dislodged')
+                            # Accumulate results for same unit key
+                            # Note: Results are stored in REVERSE order (last order first)
+                            # to match original Python code behavior
+                            if unit_key not in results:
+                                results[unit_key] = [result_elem]
+                            else:
+                                results[unit_key].insert(0, result_elem)
+                        else:
+                            # Movement/Retreat phase: result_list contains error codes
+                            result_list = []
+                            if result_code == 1: result_list = []  # Success
+                            elif result_code == 2: result_list = ['bounce']
+                            elif result_code == 3: result_list = ['cut']
+                            elif result_code == 4: result_list = ['dislodged']
+                            elif result_code == 5: result_list = ['void']
+                            elif result_code == 6: result_list = ['bounce']
+                            elif result_code == 7: result_list = ['no convoy']
+                            elif result_code == 8: result_list = ['disrupted']
+                            else: result_list = []
 
-                        # For retreat orders, BOUNCE or VOID means the unit is disbanded
-                        if is_retreat_order and ('bounce' in result_list or 'void' in result_list) and 'disband' not in result_list:
-                            result_list.append('disband')
+                            # If unit was dislodged during MOVEMENT phase, add 'dislodged' if not already present
+                            # Note: Don't add 'dislodged' during retreat phase - that's for movement phase only
+                            if current_phase in (0, 2) and unit_key in dislodged_units and 'dislodged' not in result_list:
+                                result_list.append('dislodged')
 
-                        results[unit_key] = result_list
+                            # For retreat orders, BOUNCE or VOID means the unit is disbanded
+                            if is_retreat_order and ('bounce' in result_list or 'void' in result_list) and 'disband' not in result_list:
+                                result_list.append('disband')
+
+                            results[unit_key] = result_list
 
         # Handle auto-disbanded units (dislodged units with no retreat order submitted)
         # During retreat phase, units that were dislodged but had no order are auto-disbanded
@@ -197,7 +223,6 @@ class GameAdapter:
     def process(self) -> None:
         state = binding.query_game_state(self.env.env_handle)
         phase_before_step = state["phase"]  # Capture phase BEFORE step
-        power_names = ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"]
 
         # Capture dislodged units BEFORE processing (for retreat phase auto-disband tracking)
         dislodged_before_step = None
@@ -216,9 +241,9 @@ class GameAdapter:
                 if power is None:
                     continue
                 pname = str(power).upper()
-                if pname not in power_names:
+                if pname not in POWER_NAMES:
                     continue
-                pidx = power_names.index(pname)
+                pidx = POWER_NAMES.index(pname)
                 binding.game_submit_orders(self.env.env_handle, pidx, orders)
                 orders_submitted[pname] = orders
             self._pending_orders = {}
@@ -263,10 +288,10 @@ class GameAdapter:
 
     def get_centers(self, power: str) -> List[str]:
         if power is None:
-            return {name: self.get_centers(name) for name in ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"]}
+            return {name: self.get_centers(name) for name in POWER_NAMES}
 
         state = binding.query_game_state(self.env.env_handle)
-        power_idx = ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"].index(str(power).upper())
+        power_idx = POWER_NAMES.index(str(power).upper())
         centers_idx = state["powers"][power_idx]["centers"]
         map_info = binding.query_map_info(self.env.env_handle)
         idx_to_name = [loc["name"] for loc in map_info["locations"]]
@@ -278,17 +303,17 @@ class GameAdapter:
 
         def units_for_power(pname: str):
             state = binding.query_game_state(self.env.env_handle)
-            pidx = ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"].index(pname)
+            pidx = POWER_NAMES.index(pname)
             units = state["powers"][pidx]["units"]
             return [f"{'A' if u['type'] == 1 else 'F'} {idx_to_name[u['location']]}" for u in units]
 
         if power is None:
-            return {name: units_for_power(name) for name in ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"]}
+            return {name: units_for_power(name) for name in POWER_NAMES}
         return units_for_power(str(power).upper())
 
     def get_welfare_points(self, power: str) -> int:
         state = binding.query_game_state(self.env.env_handle)
-        power_idx = ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"].index(power.upper())
+        power_idx = POWER_NAMES.index(power.upper())
         return state["powers"][power_idx]["welfare_points"]
 
     def is_game_over(self) -> bool:
@@ -304,7 +329,7 @@ class GameAdapter:
             return {u: results.get(u, []) for u in all_units}
         else:
             result = {}
-            for pname in ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"]:
+            for pname in POWER_NAMES:
                 units = self.get_units(pname)
                 result[pname] = {u: results.get(u, []) for u in units}
             return result
@@ -359,7 +384,7 @@ class GameAdapter:
 
     @property
     def ordered_units(self):
-        return {pname: self.get_units(pname) for pname in ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"]}
+        return {pname: self.get_units(pname) for pname in POWER_NAMES}
 
     def _unit_owner(self, unit_str: str, coast_required: bool = False):
         unit_str = unit_str.strip().upper()
@@ -371,7 +396,7 @@ class GameAdapter:
             def __init__(self, name):
                 self.name = name
 
-        for pname in ["AUSTRIA","ENGLAND","FRANCE","GERMANY","ITALY","RUSSIA","TURKEY"]:
+        for pname in POWER_NAMES:
             units = self.get_units(pname)
             for u in units:
                 u_normalized = u.strip().upper()
