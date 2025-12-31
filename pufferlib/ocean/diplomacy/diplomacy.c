@@ -2028,6 +2028,24 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                         if (attempts[k].can_move &&
                             attempts[k].to_location == attempts[j].from_location &&
                             attempts[k].attack_strength > attempts[j].defend_strength) {
+                            // DATC 6.G: Check for convoy swap - if this is a head-to-head with convoy,
+                            // the "dislodged" unit is actually swapping, not being dislodged
+                            int is_convoy_swap = 0;
+                            if (attempts[j].is_convoyed || attempts[k].is_convoyed) {
+                                // At least one unit is convoyed - check if it's a head-to-head swap
+                                int j_dest_parent = get_parent_location(game->map, attempts[j].to_location);
+                                int k_from_parent = get_parent_location(game->map, attempts[k].from_location);
+                                if (j_dest_parent == k_from_parent) {
+                                    // Unit j is going to unit k's origin - this is a swap, not dislodgement
+                                    is_convoy_swap = 1;
+                                }
+                            }
+
+                            if (is_convoy_swap) {
+                                // Convoy swap - unit j is not dislodged, it's swapping
+                                break;
+                            }
+
                             // DATC 6.G.10 / 4.A.7 choice (b): If the attacker arrived via convoy,
                             // the dislodged unit CAN still contest destinations (including
                             // the attacker's origin) because there's no head-to-head battle.
@@ -2826,7 +2844,17 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
                                     if (fleet_order->type == ORDER_CONVOY &&
                                         fleet_order->target_unit_location == check_attempt->from_location &&
                                         fleet_order->dest_location == check_attempt->to_location) {
-                                        convoying_fleets[num_convoying++] = fleet_order->unit_location;
+                                        // DATC 6.F.9: Exclude dislodged fleets from path check
+                                        int fleet_dislodged = 0;
+                                        for (int d = 0; d < game->num_dislodged; d++) {
+                                            if (game->dislodged[d].from_location == fleet_order->unit_location) {
+                                                fleet_dislodged = 1;
+                                                break;
+                                            }
+                                        }
+                                        if (!fleet_dislodged) {
+                                            convoying_fleets[num_convoying++] = fleet_order->unit_location;
+                                        }
                                     }
                                 }
                             }
