@@ -1,11 +1,43 @@
 # Welfare Diplomacy C Port - Status
 
-**Last Updated**: December 30, 2025 (Session 2)
-**Current**: 139/160 tests passing (86.9%)
-**Previous**: 136/160 (85.0%)
-**Session Gain**: +3 tests (coast adjacency, convoy result codes)
+**Last Updated**: December 31, 2025 (Session 3)
+**Current**: 143/160 tests passing (89.4%)
+**Previous**: 139/160 (86.9%)
+**Session Gain**: +4 tests (convoy disruption, dislodgement coasts)
 
-## Latest Session: Convoy & Coast Fixes (Dec 30, 2025 - Session 2)
+## Latest Session: Convoy Disruption & Dislodgement (Dec 31, 2025 - Session 3)
+
+**Summary**: Fixed convoy disruption timing for circular movements, failed convoy handling, and dislodgement logic for split-coast locations.
+
+### Fixes Implemented
+
+1. **test_6_c_5**: Convoy disruption before circular movement (DATC 6.C.5)
+   - **Issue**: Convoy disruption check happened AFTER cycle detection
+   - **Fix**: Added preliminary convoy disruption check before Step 5 (cycle detection)
+   - **Impact**: When a convoying fleet is dislodged, the convoy is disrupted BEFORE circular movement resolution
+   - **Files**: `diplomacy.c:1680-1740`
+
+2. **test_6_d_8**: Failed convoy can't receive hold support + `is_convoy_possible`
+   - **Issue**: Army with failed convoy could receive hold support (treated as holding)
+   - **Fix1**: Added `is_convoy_possible()` to validate orders where convoy was geometrically possible
+   - **Fix2**: Non-adjacent army moves without convoy fail but order is valid (can't get hold support)
+   - **Files**: `diplomacy.c:897-923, 652-656, 1696-1704`
+
+3. **test_6_d_23**: Dislodgement with coast parent comparison
+   - **Issue**: Dislodgement logic compared exact locations, not parent locations
+   - **Fix**: Attack on SPA/SC now dislodges unit at SPA/NC (same parent)
+   - **Files**: `diplomacy.c:2083-2108`
+
+4. **test_6_d_31**: NO_CONVOY result for non-adjacent army without convoy
+   - **Issue**: Army moving non-adjacent without convoy got BOUNCE instead of NO_CONVOY
+   - **Fix**: Added check for army moves to non-adjacent without is_convoyed flag
+   - **Files**: `diplomacy.c:2688-2693`
+
+5. **test_6_k_2**: (Fixed by convoy handling improvements above)
+
+---
+
+## Previous Session: Convoy & Coast Fixes (Dec 30, 2025 - Session 2)
 
 **Summary**: Fixed convoy path finding for split-coast locations (SPA, BUL, STP) and convoy result codes to distinguish SUCCESS vs NO_CONVOY for unused convoy routes.
 
