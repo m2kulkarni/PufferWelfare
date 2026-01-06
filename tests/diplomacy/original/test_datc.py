@@ -3174,6 +3174,8 @@ class TestDATC:
         self.set_orders(game, 'ITALY', ['F NAP S F ION', 'F ION C A TUN - NAP'])
         self.set_orders(game, 'TURKEY', ['F AEG S F EAS - ION', 'F EAS - ION'])
         self.process(game)
+        result = game.result_history.last_value()
+        print(f"ALL RESULTS 6_F_20: {result}")
         assert self.check_results(game, 'A TUN', BOUNCE)
         assert self.check_results(game, 'F TYS', OK)
         assert self.check_results(game, 'F NAP', CUT)

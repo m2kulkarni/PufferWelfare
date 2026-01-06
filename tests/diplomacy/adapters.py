@@ -193,6 +193,7 @@ class GameAdapter:
                             elif result_code == 6: result_list = ['bounce']
                             elif result_code == 7: result_list = ['no convoy']
                             elif result_code == 8: result_list = ['disrupted']
+                            elif result_code == 9: result_list = ['disband']
                             else: result_list = []
 
                             # If unit was dislodged during MOVEMENT phase, add 'dislodged' if not already present

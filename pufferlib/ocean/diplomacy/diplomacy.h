@@ -71,7 +71,8 @@ typedef enum {
     RESULT_VOID = 5,       // Order is invalid
     RESULT_FAILED = 6,     // Order failed (generic failure)
     RESULT_NO_CONVOY = 7,  // Convoy order failed (convoy disrupted or invalid)
-    RESULT_DISRUPTED = 8   // Convoy disrupted by paradox (fleet order was valid but paradox)
+    RESULT_DISRUPTED = 8,  // Convoy disrupted by paradox (fleet order was valid but paradox)
+    RESULT_DISBAND = 9     // Unit was explicitly disbanded
 } OrderResult;
 
 // Location structure

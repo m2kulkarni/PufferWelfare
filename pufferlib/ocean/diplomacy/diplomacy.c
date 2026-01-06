@@ -975,6 +975,172 @@ int is_convoy_possible(GameState* game, int from, int to) {
     return find_convoy_path(game->map, from, to, fleet_locs, count);
 }
 
+// DATC 6.G.7: Check if a specific fleet can be on a valid convoy path
+// A fleet's convoy order is only valid if the fleet can actually participate
+// in a path from the origin to destination
+int can_fleet_convoy_this_path(GameState* game, int fleet_loc, int from, int to) {
+    // Fleet must be on a water space that allows convoy
+    if (!can_fleet_convoy(game->map, fleet_loc)) {
+        return 0;
+    }
+
+    // Collect all fleets that could convoy (from all powers)
+    int all_fleets[MAX_LOCATIONS];
+    int num_fleets = 0;
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        for (int u = 0; u < power->num_units; u++) {
+            Unit* unit = &power->units[u];
+            if (unit->type == UNIT_FLEET && can_fleet_convoy(game->map, unit->location)) {
+                all_fleets[num_fleets++] = unit->location;
+                if (num_fleets >= MAX_LOCATIONS) break;
+            }
+        }
+        if (num_fleets >= MAX_LOCATIONS) break;
+    }
+
+    // Check if the specific fleet can be part of any convoy path from->to
+    // For a fleet to be part of a valid path:
+    // 1. There must be a way to reach the fleet from the origin
+    // 2. There must be a way to reach the destination from the fleet
+    // We test this by checking if the path still works when we force this fleet to be included
+
+    // Simple approach: check if this fleet is on ANY valid convoy path
+    // by verifying it's reachable from origin and can reach destination
+
+    Map* map = game->map;
+    Location* fleet = &map->locations[fleet_loc];
+
+    // Step 1: Can we reach this fleet from origin?
+    // Fleet must be adjacent to origin or reachable through other fleets from origin
+    int can_reach_from_origin = 0;
+
+    // Check direct adjacency to origin (or origin's coasts)
+    int from_parent = get_parent_location(map, from);
+    for (int i = 0; i < fleet->num_adjacent; i++) {
+        int adj = fleet->adjacencies[i];
+        int adj_parent = get_parent_location(map, adj);
+        if (adj_parent == from_parent) {
+            can_reach_from_origin = 1;
+            break;
+        }
+    }
+
+    if (!can_reach_from_origin) {
+        // Check if reachable through other fleets (BFS from origin)
+        int visited[MAX_LOCATIONS] = {0};
+        int queue[MAX_LOCATIONS];
+        int queue_start = 0, queue_end = 0;
+
+        // Start from origin
+        visited[from] = 1;
+        visited[from_parent] = 1;
+
+        // Find fleets adjacent to origin
+        for (int f = 0; f < num_fleets; f++) {
+            int f_loc = all_fleets[f];
+            Location* f_ptr = &map->locations[f_loc];
+            for (int i = 0; i < f_ptr->num_adjacent; i++) {
+                int adj = f_ptr->adjacencies[i];
+                int adj_parent = get_parent_location(map, adj);
+                if (adj_parent == from_parent && !visited[f_loc]) {
+                    queue[queue_end++] = f_loc;
+                    visited[f_loc] = 1;
+                    if (f_loc == fleet_loc) {
+                        can_reach_from_origin = 1;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // BFS through fleets
+        while (queue_start < queue_end && !can_reach_from_origin) {
+            int curr = queue[queue_start++];
+            Location* curr_loc = &map->locations[curr];
+
+            for (int i = 0; i < curr_loc->num_adjacent; i++) {
+                int adj = curr_loc->adjacencies[i];
+                if (!visited[adj]) {
+                    // Check if it's one of our fleets
+                    for (int f = 0; f < num_fleets; f++) {
+                        if (all_fleets[f] == adj) {
+                            visited[adj] = 1;
+                            queue[queue_end++] = adj;
+                            if (adj == fleet_loc) {
+                                can_reach_from_origin = 1;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!can_reach_from_origin) {
+        return 0;
+    }
+
+    // Step 2: Can we reach destination from this fleet?
+    // Similar check - fleet must be adjacent to dest or able to reach it through other fleets
+    int can_reach_dest = 0;
+    int to_parent = get_parent_location(map, to);
+
+    // Check direct adjacency to destination
+    for (int i = 0; i < fleet->num_adjacent; i++) {
+        int adj = fleet->adjacencies[i];
+        int adj_parent = get_parent_location(map, adj);
+        if (adj_parent == to_parent) {
+            can_reach_dest = 1;
+            break;
+        }
+    }
+
+    if (!can_reach_dest) {
+        // BFS from this fleet to find if we can reach destination through other fleets
+        int visited2[MAX_LOCATIONS] = {0};
+        int queue2[MAX_LOCATIONS];
+        int q2_start = 0, q2_end = 0;
+
+        queue2[q2_end++] = fleet_loc;
+        visited2[fleet_loc] = 1;
+
+        while (q2_start < q2_end && !can_reach_dest) {
+            int curr = queue2[q2_start++];
+            Location* curr_loc = &map->locations[curr];
+
+            // Check if this fleet is adjacent to destination
+            for (int i = 0; i < curr_loc->num_adjacent; i++) {
+                int adj = curr_loc->adjacencies[i];
+                int adj_parent = get_parent_location(map, adj);
+                if (adj_parent == to_parent) {
+                    can_reach_dest = 1;
+                    break;
+                }
+            }
+
+            if (!can_reach_dest) {
+                // Expand to adjacent fleets
+                for (int i = 0; i < curr_loc->num_adjacent; i++) {
+                    int adj = curr_loc->adjacencies[i];
+                    if (!visited2[adj]) {
+                        for (int f = 0; f < num_fleets; f++) {
+                            if (all_fleets[f] == adj) {
+                                visited2[adj] = 1;
+                                queue2[q2_end++] = adj;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return can_reach_dest;
+}
+
 // Get list of fleets offering to convoy an army from start to end
 // Returns number of convoying fleets found
 // Check if an army move should be via convoy (has valid convoy path)
@@ -1231,6 +1397,8 @@ static void collect_movement_orders(GameState* game, MoveAttempt* attempts, int*
                                 use_convoy = 1;
                             } else {
                                 // Check if SAME power offers convoy (voluntary convoy)
+                                // DATC 6.G.7: The convoy order must be VALID - the fleet must be
+                                // able to form part of a valid convoy path
                                 for (int cp = 0; cp < MAX_POWERS; cp++) {
                                     if (cp != p) continue;  // Only check same power
                                     Power* convoy_power = &game->powers[cp];
@@ -1239,7 +1407,14 @@ static void collect_movement_orders(GameState* game, MoveAttempt* attempts, int*
                                         if (convoy_order->type == ORDER_CONVOY &&
                                             convoy_order->target_unit_location == order->unit_location &&
                                             convoy_order->dest_location == order->target_location) {
-                                            use_convoy = 1;
+                                            // DATC 6.G.7: Verify fleet can be on a valid convoy path
+                                            // Invalid convoy orders (e.g., F BOT C A SWE-NWY where BOT
+                                            // can't reach NWY) should be ignored for intent purposes
+                                            if (can_fleet_convoy_this_path(game, convoy_order->unit_location,
+                                                                           order->unit_location,
+                                                                           order->target_location)) {
+                                                use_convoy = 1;
+                                            }
                                             break;
                                         }
                                     }
@@ -1500,12 +1675,88 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
                                         }
                                     }
 
-                                    if (!dest_blocked_by_stationary) {
+                                    // Check if own unit is in a cycle that includes an attacker
+                                    // (6.E.10 case: cycle fails when an attacker is part of the cycle)
+                                    // BUT: Don't count immediate swaps (6.E.11 - swap succeeds)
+                                    int cycle_with_attacker = 0;
+                                    if (!dest_blocked_by_stationary && other_attackers > 0) {
+                                        // Check if any attacker is part of the chain from own's destination
+                                        // Follow the chain: own -> dest -> dest's dest -> ...
+                                        int chain_loc = own_to_parent;  // Start at own's destination
+                                        for (int chain_depth = 0; chain_depth < 10; chain_depth++) {
+                                            // Find unit at chain_loc
+                                            int found_move = 0;
+                                            for (int m = 0; m < num_attempts; m++) {
+                                                int m_from = get_parent_location(game->map, attempts[m].from_location);
+                                                if (m_from == chain_loc && attempts[m].to_location >= 0) {
+                                                    int m_to = get_parent_location(game->map, attempts[m].to_location);
+                                                    // Check if this unit is attacking our own unit
+                                                    if (m_to == j_from_parent) {
+                                                        // If this is an immediate swap (chain_depth == 0),
+                                                        // it's not a breaking cycle - swap succeeds (6.E.11)
+                                                        if (chain_depth > 0) {
+                                                            // Found an attacker in a multi-step chain
+                                                            cycle_with_attacker = 1;
+                                                        }
+                                                        break;
+                                                    }
+                                                    // Continue following the chain
+                                                    chain_loc = m_to;
+                                                    found_move = 1;
+                                                    break;
+                                                }
+                                            }
+                                            if (!found_move || cycle_with_attacker) break;
+                                        }
+                                    }
+
+                                    if (!dest_blocked_by_stationary && !cycle_with_attacker) {
                                         // Destination can be vacated - support is valid
                                         // (6.E.9 case, 6.C.2 circular movement)
                                     } else if (other_attackers > 0) {
-                                        // Multiple attackers - potential standoff, support is valid
-                                        // (6.E.12 case - support creates beleaguered garrison)
+                                        // Multiple attackers - check if this support would break the tie
+                                        // (6.E.10 vs 6.E.12: support that breaks tie is VOID, support that
+                                        // maintains beleaguered garrison is valid)
+                                        // Calculate attack strength WITH this support (count all supports for this attack)
+                                        // Exclude the current support being considered (we'll add it manually)
+                                        int atk_with_support = 1;  // Base strength
+                                        for (int ss = 0; ss < num_supports; ss++) {
+                                            if (ss == s) continue;  // Skip current support
+                                            if (!supports[ss].is_valid) continue;
+                                            if (supports[ss].supported_location == attempt->from_location &&
+                                                get_parent_location(game->map, supports[ss].destination) == j_from_parent) {
+                                                atk_with_support++;
+                                            }
+                                        }
+                                        // Add 1 for the current support being considered
+                                        atk_with_support++;
+
+                                        // Find max strength of other attackers (calculate fully including all supports)
+                                        int max_other_atk = 0;
+                                        for (int m = 0; m < num_attempts; m++) {
+                                            if (m == i) continue;  // Skip the current attack
+                                            int m_to_parent = get_parent_location(game->map, attempts[m].to_location);
+                                            if (m_to_parent == j_from_parent) {
+                                                // Another attack on own unit's location
+                                                int other_str = 1;  // Base strength
+                                                for (int ss = 0; ss < num_supports; ss++) {
+                                                    if (!supports[ss].is_valid) continue;
+                                                    if (supports[ss].supported_location == attempts[m].from_location &&
+                                                        get_parent_location(game->map, supports[ss].destination) == j_from_parent) {
+                                                        other_str++;
+                                                    }
+                                                }
+                                                if (other_str > max_other_atk) {
+                                                    max_other_atk = other_str;
+                                                }
+                                            }
+                                        }
+                                        // If adding this support would make attack stronger than all others,
+                                        // it would dislodge own unit - support is void
+                                        if (atk_with_support > max_other_atk) {
+                                            own_unit_at_dest = 1;
+                                        }
+                                        // Otherwise support maintains beleaguered garrison - valid
                                     } else {
                                         // Destination blocked AND only one attacker - support would
                                         // be the deciding factor in dislodging, void it
@@ -1933,19 +2184,28 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                     can_resolve_cycle = 0;
                 }
 
-                // Head-to-head check: in a 2-unit cycle without convoy, if neither has enough
-                // strength to dislodge the other, it's a contested head-to-head and both bounce
+                // Head-to-head check: in a 2-unit cycle without convoy, compare attack strengths
                 // DATC 6.E.3: Two units can only swap via convoy, not by direct move
+                // DATC 6.E.15: In head-to-head, compare ATTACK strengths, not attack vs defense
                 if (can_resolve_cycle) {
                     MoveAttempt* unit1 = &attempts[cycle_indices[0]];
                     MoveAttempt* unit2 = &attempts[cycle_indices[1]];
                     // If neither unit is convoying, it's a direct swap attempt (not allowed)
                     if (!unit1->is_convoyed && !unit2->is_convoyed) {
-                        // Direct swap - both bounce unless one wins the head-to-head
-                        if (unit1->attack_strength <= unit2->defend_strength &&
-                            unit2->attack_strength <= unit1->defend_strength) {
-                            // Neither can dislodge the other - contested head-to-head
+                        // Direct head-to-head: compare attack strengths
+                        if (unit1->attack_strength == unit2->attack_strength) {
+                            // Equal attack strengths - both bounce (DATC 6.E.15)
                             can_resolve_cycle = 0;
+                        } else if (unit1->attack_strength > unit2->attack_strength) {
+                            // Unit 1 wins, unit 2 is dislodged (if different powers)
+                            if (unit1->unit_power == unit2->unit_power) {
+                                can_resolve_cycle = 0;  // Can't dislodge own unit
+                            }
+                        } else {
+                            // Unit 2 wins, unit 1 is dislodged (if different powers)
+                            if (unit2->unit_power == unit1->unit_power) {
+                                can_resolve_cycle = 0;  // Can't dislodge own unit
+                            }
                         }
                     }
                 }
@@ -2397,8 +2657,25 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
 
                         // Would the attacker now dislodge the fleet?
                         if (max_attack_str > reduced_defense) {
-                            // Cutting this support would allow dislodgement - PARADOX!
-                            is_convoy_paradox = 1;
+                            // DATC 6.F.20: Before calling it a paradox, check if this fleet
+                            // is NECESSARY for the convoy. If there's an alternate route,
+                            // it's NOT a paradox - the convoy succeeds via the alternate route.
+                            int other_fleets[MAX_LOCATIONS];
+                            int num_other = 0;
+                            for (int of = 0; of < num_fleets; of++) {
+                                if (convoying_fleets[of] != fleet_loc) {
+                                    other_fleets[num_other++] = convoying_fleets[of];
+                                }
+                            }
+                            // Check if convoy works without this fleet
+                            int has_alternate = (num_other > 0 &&
+                                find_convoy_path(game->map, attempt->from_location,
+                                                attempt->to_location, other_fleets, num_other));
+                            if (!has_alternate) {
+                                // Fleet is necessary and would be dislodged - PARADOX!
+                                is_convoy_paradox = 1;
+                            }
+                            // If has_alternate, fleet is NOT necessary, NOT a paradox
                         }
                     }
                 }
@@ -2419,8 +2696,111 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                         // If beleaguered (2+ equal attackers) and cutting changes balance
                         if (num_max_attackers >= 2 &&
                             fleet_attempt->defend_strength <= max_attack_str) {
-                            // Cutting would break the beleaguered tie - PARADOX!
-                            is_convoy_paradox = 1;
+                            // DATC 6.F.20: Check if fleet is necessary before calling paradox
+                            int other_fleets2[MAX_LOCATIONS];
+                            int num_other2 = 0;
+                            for (int of = 0; of < num_fleets; of++) {
+                                if (convoying_fleets[of] != fleet_loc) {
+                                    other_fleets2[num_other2++] = convoying_fleets[of];
+                                }
+                            }
+                            int has_alternate2 = (num_other2 > 0 &&
+                                find_convoy_path(game->map, attempt->from_location,
+                                                attempt->to_location, other_fleets2, num_other2));
+                            if (!has_alternate2) {
+                                // Cutting would break the beleaguered tie - PARADOX!
+                                is_convoy_paradox = 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Case 3: Second-order paradox (DATC 6.F.24)
+            // If cutting support would un-dislodge a convoy fleet, and that convoy cutting
+            // support would dislodge THIS convoy's fleet, it's a paradox
+            if (!is_convoy_paradox) {
+                // Check what supports this convoy would cut
+                for (int s = 0; s < num_supports && !is_convoy_paradox; s++) {
+                    if (!supports[s].is_valid || supports[s].is_cut) continue;
+
+                    int supporter_parent = get_parent_location(game->map, supports[s].supporter_location);
+                    if (convoy_dest_parent != supporter_parent) continue;
+
+                    // This support would be cut. Is it supporting an attack on a dislodged convoy fleet?
+                    int supported_dest = get_parent_location(game->map, supports[s].destination);
+
+                    for (int d = 0; d < game->num_dislodged && !is_convoy_paradox; d++) {
+                        int dislodged_loc = game->dislodged[d].from_location;
+                        int dislodged_parent = get_parent_location(game->map, dislodged_loc);
+
+                        if (supported_dest != dislodged_parent) continue;
+
+                        // Is the dislodged unit a convoying fleet?
+                        for (int p = 0; p < MAX_POWERS && !is_convoy_paradox; p++) {
+                            Power* chk_power = &game->powers[p];
+                            for (int o = 0; o < chk_power->num_orders && !is_convoy_paradox; o++) {
+                                Order* chk_order = &chk_power->orders[o];
+                                if (chk_order->type != ORDER_CONVOY) continue;
+                                if (chk_order->unit_location != dislodged_loc) continue;
+
+                                // Found a convoy using the dislodged fleet
+                                // If un-dislodged, would this convoy cut support that dislodges
+                                // the current convoy's fleet?
+                                int other_convoy_dest = get_parent_location(game->map, chk_order->dest_location);
+
+                                // Check if other convoy would cut support for current convoy's fleet
+                                for (int f = 0; f < num_fleets && !is_convoy_paradox; f++) {
+                                    int fleet_loc = convoying_fleets[f];
+                                    int fleet_parent = get_parent_location(game->map, fleet_loc);
+
+                                    // Would other convoy cut a support defending this fleet?
+                                    for (int s2 = 0; s2 < num_supports && !is_convoy_paradox; s2++) {
+                                        if (!supports[s2].is_valid) continue;
+                                        int s2_supporter = get_parent_location(game->map, supports[s2].supporter_location);
+                                        int s2_supported = get_parent_location(game->map, supports[s2].supported_location);
+                                        int s2_dest = get_parent_location(game->map, supports[s2].destination);
+
+                                        // Other convoy would cut this support
+                                        if (other_convoy_dest == s2_supporter) {
+                                            // Is this support defending our fleet?
+                                            if (s2_supported == fleet_parent && s2_dest == fleet_parent) {
+                                                // Cutting this support would make our fleet dislodgeable
+                                                // Check if there's an attack that would succeed
+                                                for (int j = 0; j < num_attempts && !is_convoy_paradox; j++) {
+                                                    if (attempts[j].to_location == fleet_loc && attempts[j].is_valid) {
+                                                        // Calculate attack strength
+                                                        int atk_str = 1;
+                                                        for (int s3 = 0; s3 < num_supports; s3++) {
+                                                            if (!supports[s3].is_valid || supports[s3].is_cut) continue;
+                                                            if (supports[s3].supported_location == attempts[j].from_location &&
+                                                                get_parent_location(game->map, supports[s3].destination) == fleet_parent) {
+                                                                atk_str++;
+                                                            }
+                                                        }
+                                                        // Calculate defense WITHOUT the support that would be cut
+                                                        int def_str = 1;
+                                                        for (int s3 = 0; s3 < num_supports; s3++) {
+                                                            if (!supports[s3].is_valid) continue;
+                                                            // Skip the support that would be cut by other convoy
+                                                            if (get_parent_location(game->map, supports[s3].supporter_location) == other_convoy_dest) continue;
+                                                            int s3_supported = get_parent_location(game->map, supports[s3].supported_location);
+                                                            int s3_dest = get_parent_location(game->map, supports[s3].destination);
+                                                            if (s3_supported == fleet_parent && s3_dest == fleet_parent) {
+                                                                def_str++;
+                                                            }
+                                                        }
+                                                        if (atk_str > def_str) {
+                                                            // Second-order paradox detected!
+                                                            is_convoy_paradox = 1;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2454,9 +2834,348 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                     int convoy_src_parent = get_parent_location(game->map, attempt->from_location);
 
                     if (convoy_src_parent != supported_parent) {
-                        // Exception: own units don't cut support
-                        if (attempt->unit_power != support->supporter_power) {
-                            support->is_cut = 1;
+                        // Exception: defender cannot cut support for attack on itself (DATC 6.D.15)
+                        // If attacker's origin is the destination of the supported move, don't cut
+                        // (e.g., A TRI attacking A VEN who supports F ALB - TRI)
+                        int support_dest_parent = get_parent_location(game->map, support->destination);
+
+                        if (convoy_src_parent != support_dest_parent) {
+                            // Exception: own units don't cut support
+                            if (attempt->unit_power != support->supporter_power) {
+                                support->is_cut = 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 6b.2: Re-check dislodged fleets after convoy support cutting (DATC 6.F.19-24)
+    // If a support for an attack on a convoying fleet was cut by a convoyed move using
+    // an alternate route, the fleet might no longer be dislodged
+    // ONLY apply to fleets that were part of a convoy order (not all dislodged units)
+    for (int d = game->num_dislodged - 1; d >= 0; d--) {
+        DislodgedUnit* dislodged = &game->dislodged[d];
+        int fleet_loc = dislodged->from_location;
+
+        // Check if this dislodged unit was a convoying fleet
+        int was_convoying = 0;
+        for (int p = 0; p < MAX_POWERS && !was_convoying; p++) {
+            Power* power = &game->powers[p];
+            for (int o = 0; o < power->num_orders; o++) {
+                Order* order = &power->orders[o];
+                if (order->type == ORDER_CONVOY && order->unit_location == fleet_loc) {
+                    was_convoying = 1;
+                    break;
+                }
+            }
+        }
+        if (!was_convoying) continue;  // Skip non-convoying units
+
+        // Find the fleet's MoveAttempt
+        MoveAttempt* fleet_attempt = NULL;
+        for (int j = 0; j < num_attempts; j++) {
+            if (attempts[j].from_location == fleet_loc) {
+                fleet_attempt = &attempts[j];
+                break;
+            }
+        }
+        if (!fleet_attempt) continue;
+
+        // Recalculate attack strength with cut supports
+        int max_attack_str = 0;
+        for (int j = 0; j < num_attempts; j++) {
+            if (attempts[j].to_location == fleet_loc && attempts[j].is_valid) {
+                // Recalculate this attacker's strength considering cut supports
+                int attack_str = 1;  // Base strength
+                for (int s = 0; s < num_supports; s++) {
+                    if (!supports[s].is_valid || supports[s].is_cut) continue;
+                    if (supports[s].supported_location == attempts[j].from_location &&
+                        supports[s].destination == fleet_loc) {
+                        attack_str++;
+                    }
+                }
+                if (attack_str > max_attack_str) {
+                    max_attack_str = attack_str;
+                }
+            }
+        }
+
+        // If attack strength is now <= defense, fleet is no longer dislodged
+        if (max_attack_str <= fleet_attempt->defend_strength) {
+            // Mark attackers as bouncing since they can no longer dislodge
+            for (int j = 0; j < num_attempts; j++) {
+                if (attempts[j].to_location == fleet_loc && attempts[j].is_valid) {
+                    attempts[j].can_move = 0;
+                }
+            }
+
+            // Remove from dislodged list by shifting remaining entries
+            for (int i = d; i < game->num_dislodged - 1; i++) {
+                game->dislodged[i] = game->dislodged[i + 1];
+            }
+            game->num_dislodged--;
+        }
+    }
+
+    // Step 6b.3: Check if any convoying fleets should NOW be dislodged after support was cut
+    // (DATC 6.F.20 - fleet that was protected by support might now be dislodged)
+    // Track dislodged count before Step 6b.3 for circular paradox detection
+    int num_dislodged_before_6b3 = game->num_dislodged;
+    // Iterate over all convoy orders, not move attempts
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        for (int o = 0; o < power->num_orders; o++) {
+            Order* order = &power->orders[o];
+            if (order->type != ORDER_CONVOY) continue;
+
+            int fleet_loc = order->unit_location;
+            int fleet_power = p;
+
+            // Find the unit type for this fleet
+            UnitType fleet_type = UNIT_FLEET;  // Default, convoys are always fleets
+
+            // Check if already dislodged
+            int already_dislodged = 0;
+            for (int d = 0; d < game->num_dislodged; d++) {
+                if (game->dislodged[d].from_location == fleet_loc) {
+                    already_dislodged = 1;
+                    break;
+                }
+            }
+            if (already_dislodged) continue;
+
+            // Get parent location for comparison
+            int fleet_loc_parent = get_parent_location(game->map, fleet_loc);
+
+            // Recalculate attack and defense strength with cut supports
+            int max_attack_str = 0;
+            int best_attacker_idx = -1;
+            int num_max_attackers = 0;  // Count attackers with max strength (for beleaguered garrison)
+            for (int j = 0; j < num_attempts; j++) {
+                int to_parent = get_parent_location(game->map, attempts[j].to_location);
+                if (to_parent == fleet_loc_parent && attempts[j].is_valid) {
+                    int attack_str = 1;
+                    for (int s = 0; s < num_supports; s++) {
+                        if (!supports[s].is_valid || supports[s].is_cut) continue;
+                        if (supports[s].supported_location == attempts[j].from_location &&
+                            get_parent_location(game->map, supports[s].destination) == fleet_loc_parent) {
+                            attack_str++;
+                        }
+                    }
+                    if (attack_str > max_attack_str) {
+                        max_attack_str = attack_str;
+                        best_attacker_idx = j;
+                        num_max_attackers = 1;
+                    } else if (attack_str == max_attack_str) {
+                        num_max_attackers++;
+                    }
+                }
+            }
+            if (max_attack_str == 0) continue;  // No attackers
+
+            // Recalculate defense strength
+            int defense_str = 1;
+            for (int s = 0; s < num_supports; s++) {
+                if (!supports[s].is_valid || supports[s].is_cut) continue;
+                int supp_loc_parent = get_parent_location(game->map, supports[s].supported_location);
+                int supp_dest_parent = get_parent_location(game->map, supports[s].destination);
+                if (supp_loc_parent == fleet_loc_parent && supp_dest_parent == fleet_loc_parent) {
+                    defense_str++;
+                }
+            }
+
+            // If attack > defense AND only one strongest attacker, fleet is now dislodged
+            // Multiple equal-strength attackers = beleaguered garrison = no dislodgement
+            if (max_attack_str > defense_str && best_attacker_idx >= 0 && num_max_attackers == 1) {
+                // Record dislodgement
+                if (game->num_dislodged < MAX_UNITS) {
+                    DislodgedUnit* dislodged = &game->dislodged[game->num_dislodged++];
+                    dislodged->type = fleet_type;
+                    dislodged->power_id = fleet_power;
+                    dislodged->from_location = fleet_loc;
+                    dislodged->dislodged_by_location = attempts[best_attacker_idx].from_location;
+                    dislodged->attacker_used_convoy = attempts[best_attacker_idx].is_convoyed ? 1 : 0;
+                }
+                // Mark the attacker as succeeding
+                attempts[best_attacker_idx].can_move = 1;
+            }
+        }
+    }
+
+    // Step 6b.4: Check for circular convoy paradoxes (DATC 6.F.23-24)
+    // If convoy A cuts support that dislodges fleet B, and convoy B cuts support that
+    // dislodges fleet A, both convoys should fail (Szykman rule)
+    // ONLY consider fleets dislodged in Step 6b.3 (not those dislodged in normal resolution)
+    int newly_dislodged_convoy_fleets[MAX_UNITS];
+    int num_newly_dislodged = 0;
+    for (int d = num_dislodged_before_6b3; d < game->num_dislodged; d++) {
+        int fleet_loc = game->dislodged[d].from_location;
+        // Check if this was a convoying fleet
+        for (int p = 0; p < MAX_POWERS; p++) {
+            Power* power = &game->powers[p];
+            for (int o = 0; o < power->num_orders; o++) {
+                Order* order = &power->orders[o];
+                if (order->type == ORDER_CONVOY && order->unit_location == fleet_loc) {
+                    newly_dislodged_convoy_fleets[num_newly_dislodged++] = fleet_loc;
+                    goto next_dislodged;
+                }
+            }
+        }
+        next_dislodged:;
+    }
+
+    // If multiple convoying fleets are dislodged, check for circular dependency
+    if (num_newly_dislodged >= 2) {
+        // For each pair, check if there's a circular dependency
+        int is_circular_paradox = 0;
+        for (int i = 0; i < num_newly_dislodged && !is_circular_paradox; i++) {
+            int fleet_a_loc = newly_dislodged_convoy_fleets[i];
+            // Find convoy using fleet A
+            MoveAttempt* convoy_a = NULL;
+            for (int j = 0; j < num_attempts; j++) {
+                if (attempts[j].is_convoyed) {
+                    // Check if this convoy uses fleet_a
+                    for (int p = 0; p < MAX_POWERS; p++) {
+                        Power* power = &game->powers[p];
+                        for (int o = 0; o < power->num_orders; o++) {
+                            Order* order = &power->orders[o];
+                            if (order->type == ORDER_CONVOY &&
+                                order->unit_location == fleet_a_loc &&
+                                order->target_unit_location == attempts[j].from_location &&
+                                order->dest_location == attempts[j].to_location) {
+                                convoy_a = &attempts[j];
+                                goto found_convoy_a;
+                            }
+                        }
+                    }
+                }
+            }
+            found_convoy_a:
+            if (!convoy_a) continue;
+
+            for (int k = i + 1; k < num_newly_dislodged && !is_circular_paradox; k++) {
+                int fleet_b_loc = newly_dislodged_convoy_fleets[k];
+                // Find convoy using fleet B
+                MoveAttempt* convoy_b = NULL;
+                for (int j = 0; j < num_attempts; j++) {
+                    if (attempts[j].is_convoyed) {
+                        for (int p = 0; p < MAX_POWERS; p++) {
+                            Power* power = &game->powers[p];
+                            for (int o = 0; o < power->num_orders; o++) {
+                                Order* order = &power->orders[o];
+                                if (order->type == ORDER_CONVOY &&
+                                    order->unit_location == fleet_b_loc &&
+                                    order->target_unit_location == attempts[j].from_location &&
+                                    order->dest_location == attempts[j].to_location) {
+                                    convoy_b = &attempts[j];
+                                    goto found_convoy_b;
+                                }
+                            }
+                        }
+                    }
+                }
+                found_convoy_b:
+                if (!convoy_b) continue;
+
+                // Check if convoy A cuts a support that was defending fleet B,
+                // and convoy B cuts a support that was defending fleet A
+                int a_cuts_b_defense = 0;
+                int b_cuts_a_defense = 0;
+                int convoy_a_dest = get_parent_location(game->map, convoy_a->to_location);
+                int convoy_b_dest = get_parent_location(game->map, convoy_b->to_location);
+                int fleet_a_parent = get_parent_location(game->map, fleet_a_loc);
+                int fleet_b_parent = get_parent_location(game->map, fleet_b_loc);
+
+                for (int s = 0; s < num_supports; s++) {
+                    if (!supports[s].is_valid) continue;
+                    int supporter_parent = get_parent_location(game->map, supports[s].supporter_location);
+                    int supported_parent = get_parent_location(game->map, supports[s].supported_location);
+                    int dest_parent = get_parent_location(game->map, supports[s].destination);
+
+                    // Does convoy A destination match this supporter (cutting its support)?
+                    if (convoy_a_dest == supporter_parent) {
+                        // Is this support defending fleet B?
+                        if (supported_parent == fleet_b_parent && dest_parent == fleet_b_parent) {
+                            a_cuts_b_defense = 1;
+                        }
+                    }
+                    // Does convoy B destination match this supporter (cutting its support)?
+                    if (convoy_b_dest == supporter_parent) {
+                        // Is this support defending fleet A?
+                        if (supported_parent == fleet_a_parent && dest_parent == fleet_a_parent) {
+                            b_cuts_a_defense = 1;
+                        }
+                    }
+                }
+
+                if (a_cuts_b_defense && b_cuts_a_defense) {
+                    // Circular paradox detected!
+                    is_circular_paradox = 1;
+                }
+            }
+        }
+
+        if (is_circular_paradox) {
+            // Un-dislodge all convoy fleets that were part of the paradox
+            // and mark their convoys as paradoxes
+            for (int i = 0; i < num_newly_dislodged; i++) {
+                int fleet_loc = newly_dislodged_convoy_fleets[i];
+
+                // Remove from dislodged list
+                for (int d = game->num_dislodged - 1; d >= 0; d--) {
+                    if (game->dislodged[d].from_location == fleet_loc) {
+                        // Find the attacker and un-mark success
+                        for (int j = 0; j < num_attempts; j++) {
+                            if (attempts[j].to_location == fleet_loc && attempts[j].can_move) {
+                                attempts[j].can_move = 0;
+                            }
+                        }
+                        // Remove from dislodged list
+                        for (int x = d; x < game->num_dislodged - 1; x++) {
+                            game->dislodged[x] = game->dislodged[x + 1];
+                        }
+                        game->num_dislodged--;
+                        break;
+                    }
+                }
+
+                // Mark the convoy as paradox
+                for (int j = 0; j < num_attempts; j++) {
+                    if (attempts[j].is_convoyed) {
+                        for (int p = 0; p < MAX_POWERS; p++) {
+                            Power* power = &game->powers[p];
+                            for (int o = 0; o < power->num_orders; o++) {
+                                Order* order = &power->orders[o];
+                                if (order->type == ORDER_CONVOY &&
+                                    order->unit_location == fleet_loc &&
+                                    order->target_unit_location == attempts[j].from_location &&
+                                    order->dest_location == attempts[j].to_location) {
+                                    attempts[j].convoy_disrupted = 1;
+                                    attempts[j].convoy_paradox = 1;
+                                    attempts[j].can_move = 0;
+                                    goto marked_paradox;
+                                }
+                            }
+                        }
+                    }
+                }
+                marked_paradox:;
+            }
+
+            // Un-cut supports that were cut by paradox convoys
+            for (int s = 0; s < num_supports; s++) {
+                if (!supports[s].is_cut) continue;
+
+                // Check if this support was cut by a paradox convoy
+                for (int j = 0; j < num_attempts; j++) {
+                    if (attempts[j].is_convoyed && attempts[j].convoy_paradox) {
+                        int convoy_dest = get_parent_location(game->map, attempts[j].to_location);
+                        int supporter_parent = get_parent_location(game->map, supports[s].supporter_location);
+                        if (convoy_dest == supporter_parent) {
+                            supports[s].is_cut = 0;
+                            break;
                         }
                     }
                 }
@@ -2769,6 +3488,12 @@ static void apply_successful_moves(GameState* game, MoveAttempt* attempts, int n
             // Convoy orders: check if valid and if convoy was used/disrupted
             if (!attempt->is_valid) {
                 // Invalid convoy order (bad syntax or impossible convoy)
+                order->result = RESULT_VOID;
+            } else if (!can_fleet_convoy_this_path(game, order->unit_location,
+                                                   order->target_unit_location,
+                                                   order->dest_location)) {
+                // DATC 6.G.7: Fleet can't form part of any valid convoy path
+                // This is an illegal order and should be VOID
                 order->result = RESULT_VOID;
             } else {
                 // Check if there's a unit actually using this convoy
@@ -3278,7 +4003,7 @@ void resolve_retreat_phase(GameState* game) {
                     // Explicit disband order
                     retreat_destinations[num_retreat_orders] = -1;
                     retreat_power[num_retreat_orders] = p;
-                    order->result = RESULT_SUCCESS;  // Disband succeeded
+                    order->result = RESULT_DISBAND;  // Disband succeeded
                     num_retreat_orders++;
                     found_order = 1;
                     break;
