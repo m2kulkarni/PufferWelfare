@@ -6,14 +6,98 @@ Power colors from jdipNS:POWERCOLORS.
 Location index mapping from diplomacy_map.c.
 """
 
-# Map dimensions (from SVG viewbox)
-MAP_WIDTH = 1521
-MAP_HEIGHT = 1403
+# Map dimensions (from SVG viewbox: 0 0 1835 1360)
+MAP_WIDTH = 1835
+MAP_HEIGHT = 1360
 
 # Unit rendering sizes
-UNIT_RADIUS = 15
-ARROW_HEAD_SIZE = 8
+UNIT_RADIUS = 16
+FLEET_SIZE = 12  # Smaller than circle to look balanced
+ARROW_HEAD_SIZE = 10
 LINE_WIDTH = 3
+LABEL_FONT_SIZE = 20  # Crisp text at full resolution
+SC_SIZE = 8
+
+# Label coordinates - extracted from BriefLabelLayer in standard.svg
+# These are optimized visual positions for province labels
+LABEL_COORDS = {
+    "ADR": (849.4, 1100.6),
+    "AEG": (1085.7, 1296.4),
+    "ALB": (932.4, 1164.4),
+    "ANK": (1368.8, 1115.5),
+    "APU": (832.3, 1151.7),
+    "ARM": (1603, 1145.3),
+    "BAL": (827.2, 660.2),
+    "BAR": (1077.8, 59.3),
+    "BEL": (591.8, 796.2),
+    "BER": (760, 728),
+    "BLA": (1319.8, 1034.6),
+    "BOH": (800.4, 855.8),
+    "BOT": (929.6, 538.9),
+    "BRE": (430, 866.4),
+    "BUD": (953.7, 964.3),
+    "BUL": (1021.8, 1109.1),
+    "BUR": (530.1, 915.4),
+    "CLY": (457.7, 479),
+    "CON": (1202.8, 1177.2),
+    "DEN": (718.2, 584.3),
+    "EAS": (1164.4, 1343.3),
+    "EDI": (496, 500.3),
+    "ENG": (466.2, 762.6),
+    "FIN": (1030.3, 347),
+    "GAL": (940.9, 840.9),
+    "GAS": (447, 972.8),
+    "GRE": (981.4, 1160.2),
+    "HEL": (654.2, 665.4),
+    "HOL": (608.8, 749.3),
+    "ION": (894.1, 1251.7),
+    "IRI": (318, 711.4),
+    "KIE": (691.9, 753.6),
+    "LON": (500.3, 734.4),
+    "LVN": (1030.3, 640.8),
+    "LVP": (449.2, 564.1),
+    "LYO": (525.8, 1107),
+    "MAO": (153.3, 815.3),
+    "MAR": (572.6, 962.2),
+    "MOS": (1568.9, 572.6),
+    "MUN": (681.2, 872.8),
+    "NAF": (240.6, 1317.7),
+    "NAO": (191.6, 268.2),
+    "NAP": (832.3, 1211.3),
+    "NTH": (595.5, 512),
+    "NWG": (664.2, 161.8),
+    "NWY": (760, 391.7),
+    "PAR": (481.1, 892),
+    "PIC": (489.6, 802.5),
+    "PIE": (628, 1004.8),
+    "POR": (175.1, 1102.1),  # Original has rotate(-60)
+    "PRU": (938.8, 687.6),
+    "ROM": (729, 1092),  # Original has rotate(45)
+    "RUH": (632.2, 826),
+    "RUM": (1036.7, 1015.4),
+    "SER": (964.3, 1100.6),
+    "SEV": (1479.3, 937.7),
+    "SIL": (791.9, 779.1),
+    "SKA": (754.5, 571.2),  # Original has rotate(75)
+    "SMY": (1194.2, 1247.5),
+    "SPA": (302.3, 1119.7),
+    "STP": (1473.1, 217.1),
+    "SWE": (845.1, 391.7),
+    "SWI": (649.4, 924.2),
+    "SYR": (1639.2, 1292.2),
+    "TRI": (826, 966.5),
+    "TUN": (634.4, 1351.8),
+    "TUS": (706.5, 1069),
+    "TYR": (717.4, 936.7),
+    "TYS": (710, 1209.1),
+    "UKR": (1119.7, 860),
+    "VEN": (749.3, 962.2),
+    "VIE": (834.5, 919.6),
+    "WAL": (436.4, 719.5),
+    "WAR": (938.8, 783.4),
+    "WES": (400.2, 1209.1),
+    "YOR": (496, 653.5),
+}
 
 # Province coordinates (x, y) for unit placement
 # Extracted from welfare-diplomacy/diplomacy/maps/svg/standard.svg
@@ -202,7 +286,7 @@ POWER_COLORS = {
     2: (65, 105, 225),    # France - royal blue
     3: (139, 119, 101),   # Germany - grayish brown
     4: (34, 139, 34),     # Italy - forest green
-    5: (255, 255, 255),   # Russia - white
+    5: (80, 80, 90),      # Russia - dark grey
     6: (255, 215, 0),     # Turkey - gold
     -1: (128, 128, 128),  # Neutral - gray
 }

@@ -1079,122 +1079,103 @@ void init_standard_map(Map* map) {
     // AUSTRIA
     map->home_centers[0][0] = 14;  // BUD
     map->locations[14].is_home_center = 0;
+    map->locations[14].has_supply_center = 1;
     map->home_centers[0][1] = 64;  // TRI
     map->locations[64].is_home_center = 0;
+    map->locations[64].has_supply_center = 1;
     map->home_centers[0][2] = 71;  // VIE
     map->locations[71].is_home_center = 0;
-    map->home_centers[0][4] = 14;  // BUD
-    map->locations[14].is_home_center = 0;
-    map->home_centers[0][6] = 71;  // VIE
-    map->locations[71].is_home_center = 0;
-    map->home_centers[0][8] = 64;  // TRI
-    map->locations[64].is_home_center = 0;
-    map->num_homes[0] = 10;
+    map->locations[71].has_supply_center = 1;
+    map->num_homes[0] = 3;
+
+    // ENGLAND
+    map->home_centers[1][0] = 21;  // EDI
+    map->locations[21].is_home_center = 1;
+    map->locations[21].has_supply_center = 1;
+    map->home_centers[1][1] = 32;  // LON
+    map->locations[32].is_home_center = 1;
+    map->locations[32].has_supply_center = 1;
+    map->home_centers[1][2] = 34;  // LVP
+    map->locations[34].is_home_center = 1;
+    map->locations[34].has_supply_center = 1;
+    map->num_homes[1] = 3;
 
     // FRANCE
     map->home_centers[2][0] = 13;  // BRE
     map->locations[13].is_home_center = 2;
+    map->locations[13].has_supply_center = 1;
     map->home_centers[2][1] = 37;  // MAR
     map->locations[37].is_home_center = 2;
+    map->locations[37].has_supply_center = 1;
     map->home_centers[2][2] = 46;  // PAR
     map->locations[46].is_home_center = 2;
-    map->home_centers[2][4] = 13;  // BRE
-    map->locations[13].is_home_center = 2;
-    map->home_centers[2][6] = 37;  // MAR
-    map->locations[37].is_home_center = 2;
-    map->home_centers[2][8] = 46;  // PAR
-    map->locations[46].is_home_center = 2;
-    map->num_homes[2] = 10;
+    map->locations[46].has_supply_center = 1;
+    map->num_homes[2] = 3;
+
+    // GERMANY
+    map->home_centers[3][0] = 9;  // BER
+    map->locations[9].is_home_center = 3;
+    map->locations[9].has_supply_center = 1;
+    map->home_centers[3][1] = 31;  // KIE
+    map->locations[31].is_home_center = 3;
+    map->locations[31].has_supply_center = 1;
+    map->home_centers[3][2] = 39;  // MUN
+    map->locations[39].is_home_center = 3;
+    map->locations[39].has_supply_center = 1;
+    map->num_homes[3] = 3;
 
     // ITALY
     map->home_centers[4][0] = 42;  // NAP
     map->locations[42].is_home_center = 4;
+    map->locations[42].has_supply_center = 1;
     map->home_centers[4][1] = 51;  // ROM
     map->locations[51].is_home_center = 4;
+    map->locations[51].has_supply_center = 1;
     map->home_centers[4][2] = 70;  // VEN
     map->locations[70].is_home_center = 4;
-    map->home_centers[4][4] = 42;  // NAP
-    map->locations[42].is_home_center = 4;
-    map->home_centers[4][6] = 51;  // ROM
-    map->locations[51].is_home_center = 4;
-    map->home_centers[4][8] = 70;  // VEN
-    map->locations[70].is_home_center = 4;
-    map->num_homes[4] = 10;
+    map->locations[70].has_supply_center = 1;
+    map->num_homes[4] = 3;
+
+    // RUSSIA
+    map->home_centers[5][0] = 38;  // MOS
+    map->locations[38].is_home_center = 5;
+    map->locations[38].has_supply_center = 1;
+    map->home_centers[5][1] = 55;  // SEV
+    map->locations[55].is_home_center = 5;
+    map->locations[55].has_supply_center = 1;
+    map->home_centers[5][2] = 60;  // STP
+    map->locations[60].is_home_center = 5;
+    map->locations[60].has_supply_center = 1;
+    map->home_centers[5][3] = 73;  // WAR
+    map->locations[73].is_home_center = 5;
+    map->locations[73].has_supply_center = 1;
+    map->num_homes[5] = 4;
 
     // TURKEY
     map->home_centers[6][0] = 3;  // ANK
     map->locations[3].is_home_center = 6;
+    map->locations[3].has_supply_center = 1;
     map->home_centers[6][1] = 18;  // CON
     map->locations[18].is_home_center = 6;
+    map->locations[18].has_supply_center = 1;
     map->home_centers[6][2] = 58;  // SMY
     map->locations[58].is_home_center = 6;
-    map->home_centers[6][4] = 3;  // ANK
-    map->locations[3].is_home_center = 6;
-    map->home_centers[6][6] = 18;  // CON
-    map->locations[18].is_home_center = 6;
-    map->home_centers[6][8] = 58;  // SMY
-    map->locations[58].is_home_center = 6;
-    map->home_centers[6][10] = 8;  // BEL
-    map->locations[8].is_home_center = 6;
-    map->home_centers[6][11] = 15;  // BUL
-    map->locations[15].is_home_center = 6;
-    map->home_centers[6][12] = 19;  // DEN
-    map->locations[19].is_home_center = 6;
-    map->home_centers[6][13] = 26;  // GRE
-    map->locations[26].is_home_center = 6;
-    map->home_centers[6][14] = 28;  // HOL
-    map->locations[28].is_home_center = 6;
-    map->home_centers[6][15] = 45;  // NWY
-    map->locations[45].is_home_center = 6;
-    map->num_homes[6] = 17;
+    map->locations[58].has_supply_center = 1;
+    map->num_homes[6] = 3;
 
-    // The code above sets incorrect home centers. Reset and use proper name-based lookup.
-    // Reset all is_home_center to -1
-    for (int i = 0; i < map->num_locations; i++) {
-        map->locations[i].is_home_center = -1;
-    }
-
-    // Helper macro to set home centers
-    #define SET_HOME(power_idx, name) \
-        do { \
-            int idx = find_location_by_name(map, name); \
-            if (idx >= 0) { \
-                int n = map->num_homes[power_idx]; \
-                if (n < MAX_HOME_CENTERS) { \
-                    map->home_centers[power_idx][n] = idx; \
-                } \
-                map->num_homes[power_idx] = n + 1; \
-                map->locations[idx].is_home_center = power_idx; \
-                map->locations[idx].has_supply_center = 1; \
-            } \
-        } while(0)
-
-    // Clear counts
-    for (int p = 0; p < MAX_POWERS; p++) map->num_homes[p] = 0;
-
-    // Austria
-    SET_HOME(0, "BUD"); SET_HOME(0, "TRI"); SET_HOME(0, "VIE");
-    // England
-    SET_HOME(1, "EDI"); SET_HOME(1, "LON"); SET_HOME(1, "LVP");
-    // France
-    SET_HOME(2, "BRE"); SET_HOME(2, "MAR"); SET_HOME(2, "PAR");
-    // Germany
-    SET_HOME(3, "BER"); SET_HOME(3, "KIE"); SET_HOME(3, "MUN");
-    // Italy
-    SET_HOME(4, "NAP"); SET_HOME(4, "ROM"); SET_HOME(4, "VEN");
-    // Russia (4 homes)
-    SET_HOME(5, "MOS"); SET_HOME(5, "SEV"); SET_HOME(5, "STP"); SET_HOME(5, "WAR");
-    // Turkey
-    SET_HOME(6, "ANK"); SET_HOME(6, "CON"); SET_HOME(6, "SMY");
-
-    // Ensure neutral supply centers are marked
-    const char* neutrals[] = {"BEL","BUL","DEN","GRE","HOL","NWY","POR","RUM","SER","SPA","SWE","TUN"};
-    for (int i = 0; i < 12; i++) {
-        int idx = find_location_by_name(map, neutrals[i]);
-        if (idx >= 0) map->locations[idx].has_supply_center = 1;
-    }
-
-    #undef SET_HOME
+    // Neutral supply centers
+    map->locations[8].has_supply_center = 1;   // BEL
+    map->locations[15].has_supply_center = 1;  // BUL
+    map->locations[19].has_supply_center = 1;  // DEN
+    map->locations[26].has_supply_center = 1;  // GRE
+    map->locations[28].has_supply_center = 1;  // HOL
+    map->locations[45].has_supply_center = 1;  // NWY
+    map->locations[49].has_supply_center = 1;  // POR
+    map->locations[53].has_supply_center = 1;  // RUM
+    map->locations[54].has_supply_center = 1;  // SER
+    map->locations[59].has_supply_center = 1;  // SPA
+    map->locations[61].has_supply_center = 1;  // SWE
+    map->locations[65].has_supply_center = 1;  // TUN
 
     // Build adjacency cache for fast movement lookups
     // Initialize entire cache to 0

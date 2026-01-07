@@ -349,18 +349,117 @@ void free_game(GameState* game) {
 // Order Handling
 // ============================================================================
 
-int parse_order(const char* order_str, Order* order, GameState* game) {
-    // Parse standard Diplomacy order notation
-    // Format examples:
-    // "A PAR - MAR" (move)
-    // "A PAR H" or "A PAR HOLDS" (hold)
-    // "A PAR S A MAR - BUR" (support move)
-    // "A PAR S A MAR" (support hold)
-    // "F ENG C A WAL - BRE" (convoy)
+// Skip optional unit type prefix (A or F), returns location token
+static char* skip_unit_type_prefix(char* token, Map* map) {
+    if ((token[0] == 'A' || token[0] == 'F') && strlen(token) == 1) {
+        token = strtok(NULL, " ");
+    }
+    return token;
+}
 
-    if (!order_str || !order || !game) {
+// Find location, trying coast variants for 3-letter names (DATC 6.B.7-10)
+static int find_location_with_coast_fallback(Map* map, const char* name) {
+    int loc = find_location_by_name(map, name);
+    if (loc >= 0 || strlen(name) != 3) return loc;
+
+    for (int i = 0; i < map->num_locations; i++) {
+        if (strncmp(map->locations[i].name, name, 3) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int parse_move_order(Order* order, GameState* game) {
+    char* token = strtok(NULL, " ");
+    if (!token) return -1;
+
+    int dest_loc = find_location_by_name(game->map, token);
+    if (order->unit_type == UNIT_FLEET) {
+        int inferred = default_coast(game->map, order->unit_location, token);
+        if (inferred >= 0) dest_loc = inferred;
+    }
+    if (dest_loc < 0) return -1;
+
+    order->type = ORDER_MOVE;
+    order->target_location = dest_loc;
+
+    token = strtok(NULL, " ");
+    if (token && (strcmp(token, "VIA") == 0 || strcmp(token, "VIA CONVOY") == 0)) {
+        order->explicit_convoy = 1;
+    }
+    return 0;
+}
+
+static int parse_support_order(Order* order, GameState* game) {
+    char* token = strtok(NULL, " ");
+    if (!token) return -1;
+
+    token = skip_unit_type_prefix(token, game->map);
+    if (!token) return -1;
+
+    int supported_loc = find_location_by_name(game->map, token);
+    if (supported_loc < 0) return -1;
+    order->target_unit_location = supported_loc;
+
+    token = strtok(NULL, " ");
+    if (token && (strcmp(token, "-") == 0 || strcmp(token, "->") == 0)) {
+        token = strtok(NULL, " ");
+        if (!token) return -1;
+
+        int dest_loc = find_location_with_coast_fallback(game->map, token);
+        if (dest_loc < 0) return -1;
+
+        order->type = ORDER_SUPPORT_MOVE;
+        order->dest_location = dest_loc;
+    } else {
+        order->type = ORDER_SUPPORT_HOLD;
+        order->dest_location = supported_loc;
+    }
+    return 0;
+}
+
+static int parse_convoy_order(Order* order, GameState* game) {
+    char* token = strtok(NULL, " ");
+    if (!token) return -1;
+
+    token = skip_unit_type_prefix(token, game->map);
+    if (!token) return -1;
+
+    int convoyed_loc = find_location_by_name(game->map, token);
+    if (convoyed_loc < 0) return -1;
+    order->target_unit_location = convoyed_loc;
+
+    token = strtok(NULL, " ");
+    if (!token || (strcmp(token, "-") != 0 && strcmp(token, "->") != 0)) {
         return -1;
     }
+
+    token = strtok(NULL, " ");
+    if (!token) return -1;
+
+    int dest_loc = find_location_by_name(game->map, token);
+    if (dest_loc < 0) return -1;
+
+    order->type = ORDER_CONVOY;
+    order->dest_location = dest_loc;
+    return 0;
+}
+
+static int parse_retreat_order(Order* order, GameState* game) {
+    char* token = strtok(NULL, " ");
+    if (!token) return -1;
+
+    int dest_loc = find_location_by_name(game->map, token);
+    if (dest_loc < 0) return -1;
+
+    order->type = ORDER_RETREAT;
+    order->target_location = dest_loc;
+    return 0;
+}
+
+int parse_order(const char* order_str, Order* order, GameState* game) {
+    if (!order_str || !order || !game) return -1;
 
     memset(order, 0, sizeof(Order));
 
@@ -368,12 +467,10 @@ int parse_order(const char* order_str, Order* order, GameState* game) {
     strncpy(buffer, order_str, sizeof(buffer) - 1);
     buffer[sizeof(buffer) - 1] = '\0';
 
-    // Convert to uppercase for easier parsing
     for (char* p = buffer; *p; p++) {
         *p = toupper(*p);
     }
 
-    // Parse unit type (A or F)
     char* token = strtok(buffer, " ");
     if (!token) return -1;
 
@@ -382,225 +479,206 @@ int parse_order(const char* order_str, Order* order, GameState* game) {
     } else if (token[0] == 'F') {
         order->unit_type = UNIT_FLEET;
     } else {
-        return -1;  // Invalid unit type
+        return -1;
     }
 
-    // Parse unit location
     token = strtok(NULL, " ");
     if (!token) return -1;
 
     int unit_loc = find_location_by_name(game->map, token);
-
-    // Parent locations (BUL, SPA, STP) now have full adjacencies,
-    // so no need for lowercase fallback - direct lookup works
     if (unit_loc < 0) return -1;
     order->unit_location = unit_loc;
 
-    // Parse order type
     token = strtok(NULL, " ");
     if (!token) return -1;
 
     if (strcmp(token, "H") == 0 || strcmp(token, "HOLDS") == 0) {
-        // HOLD order
         order->type = ORDER_HOLD;
         return 0;
-
-    } else if (strcmp(token, "-") == 0 || strcmp(token, "->") == 0) {
-        // MOVE order
-        order->type = ORDER_MOVE;
-
-        // Parse destination
-        token = strtok(NULL, " ");
-        if (!token) return -1;
-
-        int dest_loc = find_location_by_name(game->map, token);
-
-        // For fleets, use default_coast for coast inference (DATC 6.B.2)
-        // default_coast uses fleet adjacency cache to find valid destinations
-        if (order->unit_type == UNIT_FLEET) {
-            int inferred_loc = default_coast(game->map, order->unit_location, token);
-            if (inferred_loc >= 0) {
-                dest_loc = inferred_loc;
-            }
-        }
-
-        // If no valid destination, the move is invalid
-        if (dest_loc < 0) return -1;
-        order->target_location = dest_loc;
-
-        // Check for VIA keyword (forces convoy for adjacent moves)
-        // DATC 4.A.3: "VIA" explicitly requests convoy route
-        token = strtok(NULL, " ");
-        if (token && (strcmp(token, "VIA") == 0 || strcmp(token, "VIA CONVOY") == 0)) {
-            order->explicit_convoy = 1;
-        }
-        return 0;
-
-    } else if (strcmp(token, "S") == 0 || strcmp(token, "SUPPORT") == 0 ||
-               strcmp(token, "SUPPORTS") == 0) {
-        // SUPPORT order
-        // Format: "A PAR S A MAR - BUR" or "A PAR S MAR - BUR" (unit type optional)
-
-        // Parse next token - could be unit type (A/F) or location
-        token = strtok(NULL, " ");
-        if (!token) return -1;
-
-        // Check if this token is a unit type or a location
-        int supported_loc;
-        if ((token[0] == 'A' || token[0] == 'F') && strlen(token) == 1) {
-            // Token is a unit type - skip it and read location
-            token = strtok(NULL, " ");
-            if (!token) return -1;
-            supported_loc = find_location_by_name(game->map, token);
-        } else {
-            // Token is the location directly (no unit type specified)
-            supported_loc = find_location_by_name(game->map, token);
-        }
-        if (supported_loc < 0) return -1;
-        order->target_unit_location = supported_loc;
-
-        // Check if it's support to hold or support to move
-        token = strtok(NULL, " ");
-        if (token && (strcmp(token, "-") == 0 || strcmp(token, "->") == 0)) {
-            // Support to move
-            order->type = ORDER_SUPPORT_MOVE;
-            token = strtok(NULL, " ");
-            if (!token) return -1;
-
-            int dest_loc = find_location_by_name(game->map, token);
-
-            // DATC 6.B.7-10: Support orders don't require coast specification
-            // If destination not found by exact name, try to find any coast variant
-            if (dest_loc < 0 && strlen(token) == 3) {
-                // Try to find any location that matches this base name (e.g., SPA/NC for SPA)
-                for (int i = 0; i < game->map->num_locations; i++) {
-                    if (strncmp(game->map->locations[i].name, token, 3) == 0) {
-                        dest_loc = i;
-                        break;
-                    }
-                }
-            }
-
-            if (dest_loc < 0) return -1;
-            order->dest_location = dest_loc;
-        } else {
-            // Support to hold (no destination)
-            order->type = ORDER_SUPPORT_HOLD;
-            order->dest_location = supported_loc;
-        }
-        return 0;
-
-    } else if (strcmp(token, "C") == 0 || strcmp(token, "CONVOY") == 0 ||
-               strcmp(token, "CONVOYS") == 0) {
-        // CONVOY order
-        order->type = ORDER_CONVOY;
-
-        // Parse convoyed unit type (should be A) or location directly
-        // DATC 6.A.7: Allow "C LON - BEL" without explicit "A" prefix
-        token = strtok(NULL, " ");
-        if (!token) return -1;
-
-        // Check if this token is a unit type or a location
-        int convoyed_loc;
-        if ((token[0] == 'A' || token[0] == 'F') && strlen(token) == 1) {
-            // Token is a unit type - read next token for location
-            token = strtok(NULL, " ");
-            if (!token) return -1;
-            convoyed_loc = find_location_by_name(game->map, token);
-        } else {
-            // Token is the location directly (no unit type specified)
-            convoyed_loc = find_location_by_name(game->map, token);
-        }
-        if (convoyed_loc < 0) return -1;
-        order->target_unit_location = convoyed_loc;
-
-        // Parse "-"
-        token = strtok(NULL, " ");
-        if (!token || (strcmp(token, "-") != 0 && strcmp(token, "->") != 0)) {
-            return -1;
-        }
-
-        // Parse destination
-        token = strtok(NULL, " ");
-        if (!token) return -1;
-
-        int dest_loc = find_location_by_name(game->map, token);
-        if (dest_loc < 0) return -1;
-        order->dest_location = dest_loc;
-        return 0;
-
-    } else if (strcmp(token, "B") == 0 || strcmp(token, "BUILD") == 0 ||
-               strcmp(token, "BUILDS") == 0) {
-        // BUILD order
+    }
+    if (strcmp(token, "-") == 0 || strcmp(token, "->") == 0) {
+        return parse_move_order(order, game);
+    }
+    if (strcmp(token, "S") == 0 || strcmp(token, "SUPPORT") == 0 ||
+        strcmp(token, "SUPPORTS") == 0) {
+        return parse_support_order(order, game);
+    }
+    if (strcmp(token, "C") == 0 || strcmp(token, "CONVOY") == 0 ||
+        strcmp(token, "CONVOYS") == 0) {
+        return parse_convoy_order(order, game);
+    }
+    if (strcmp(token, "B") == 0 || strcmp(token, "BUILD") == 0 ||
+        strcmp(token, "BUILDS") == 0) {
         order->type = ORDER_BUILD;
         return 0;
-
-    } else if (strcmp(token, "D") == 0 || strcmp(token, "DISBAND") == 0 ||
-               strcmp(token, "DISBANDS") == 0 || strcmp(token, "REMOVE") == 0) {
-        // DISBAND order
+    }
+    if (strcmp(token, "D") == 0 || strcmp(token, "DISBAND") == 0 ||
+        strcmp(token, "DISBANDS") == 0 || strcmp(token, "REMOVE") == 0) {
         order->type = ORDER_DISBAND;
         return 0;
-
-    } else if (strcmp(token, "R") == 0 || strcmp(token, "RETREAT") == 0 ||
-               strcmp(token, "RETREATS") == 0) {
-        // RETREAT order: "F TRI R ALB"
-        order->type = ORDER_RETREAT;
-
-        // Parse retreat destination
-        token = strtok(NULL, " ");
-        if (!token) return -1;
-
-        int dest_loc = find_location_by_name(game->map, token);
-        if (dest_loc < 0) return -1;
-        order->target_location = dest_loc;
-        return 0;
-
-    } else {
-        return -1;  // Unknown order type
     }
+    if (strcmp(token, "R") == 0 || strcmp(token, "RETREAT") == 0 ||
+        strcmp(token, "RETREATS") == 0) {
+        return parse_retreat_order(order, game);
+    }
+
+    return -1;
 }
 
-int validate_order(GameState* game, int power_id, const Order* order) {
-    // Validate that an order is legal for the current game state
-    // Returns 0 if valid, -1 if invalid
+// Validate retreat phase orders
+static int validate_retreat_order(Power* power, const Order* order) {
+    if (order->type != ORDER_RETREAT && order->type != ORDER_DISBAND) {
+        return -1;
+    }
+    for (int r = 0; r < power->num_retreats; r++) {
+        if (power->retreats[r].from_location == order->unit_location &&
+            power->retreats[r].type == order->unit_type) {
+            return 0;
+        }
+    }
+    return -1;
+}
 
-    if (!game || !order || power_id < 0 || power_id >= MAX_POWERS) {
+// Validate support orders (DATC 6.D.31, 6.D.34, 6.A.5, 6.B.7-9)
+static int validate_support_order(GameState* game, Unit* unit, const Order* order) {
+    Map* map = game->map;
+
+    if (order->target_unit_location < 0 || order->target_unit_location >= map->num_locations) {
         return -1;
     }
 
+    if (order->type == ORDER_SUPPORT_MOVE) {
+        int dest_parent = get_parent_location(map, order->dest_location);
+        int unit_parent = get_parent_location(map, unit->location);
+        if (dest_parent == unit_parent) {
+            return -1;
+        }
+        int supported_parent = get_parent_location(map, order->target_unit_location);
+        if (dest_parent == supported_parent) {
+            return -1;
+        }
+    }
+
+    int can_support = 0;
+    if (can_move(map, unit->type, unit->location, order->target_unit_location)) {
+        can_support = 1;
+    }
+    if (order->dest_location >= 0 && order->dest_location < map->num_locations) {
+        if (can_move(map, unit->type, unit->location, order->dest_location)) {
+            can_support = 1;
+        } else {
+            int coasts[10];
+            int num_coasts;
+            find_coasts(map, order->dest_location, coasts, &num_coasts);
+            for (int c = 0; c < num_coasts; c++) {
+                if (can_move(map, unit->type, unit->location, coasts[c])) {
+                    can_support = 1;
+                    break;
+                }
+            }
+        }
+    }
+    if (!can_support) {
+        return -1;
+    }
+
+    // DATC 6.D.31: Fleet can't support move that requires convoying through it
+    if (order->type == ORDER_SUPPORT_MOVE && unit->type == UNIT_FLEET &&
+        can_fleet_convoy(map, unit->location)) {
+        int supported_is_army = 0;
+        for (int check_p = 0; check_p < MAX_POWERS; check_p++) {
+            Power* check_power = &game->powers[check_p];
+            for (int check_u = 0; check_u < check_power->num_units; check_u++) {
+                int check_loc_parent = get_parent_location(map, check_power->units[check_u].location);
+                int target_parent = get_parent_location(map, order->target_unit_location);
+                if (check_loc_parent == target_parent &&
+                    check_power->units[check_u].type == UNIT_ARMY) {
+                    supported_is_army = 1;
+                    break;
+                }
+            }
+            if (supported_is_army) break;
+        }
+        if (supported_is_army) {
+            if (!can_move(map, UNIT_ARMY, order->target_unit_location, order->dest_location)) {
+                int other_fleets[MAX_LOCATIONS];
+                int num_other = 0;
+                for (int cp = 0; cp < MAX_POWERS; cp++) {
+                    Power* cpwr = &game->powers[cp];
+                    for (int cu = 0; cu < cpwr->num_units; cu++) {
+                        if (cpwr->units[cu].type == UNIT_FLEET &&
+                            cpwr->units[cu].location != unit->location &&
+                            can_fleet_convoy(map, cpwr->units[cu].location)) {
+                            other_fleets[num_other++] = cpwr->units[cu].location;
+                        }
+                    }
+                }
+                int path_without = (num_other > 0 &&
+                    find_convoy_path(map, order->target_unit_location,
+                                   order->dest_location, other_fleets, num_other));
+                if (!path_without) {
+                    return -1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// Validate convoy orders (DATC 6.A.7)
+static int validate_convoy_order(GameState* game, Unit* unit, const Order* order) {
+    Map* map = game->map;
+
+    if (unit->type != UNIT_FLEET) {
+        return -1;
+    }
+    if (!can_fleet_convoy(map, unit->location)) {
+        return -1;
+    }
+    if (order->target_unit_location < 0 || order->target_unit_location >= map->num_locations) {
+        return -1;
+    }
+    if (order->dest_location < 0 || order->dest_location >= map->num_locations) {
+        return -1;
+    }
+
+    int found_army = 0;
+    for (int check_p = 0; check_p < MAX_POWERS; check_p++) {
+        Power* check_power = &game->powers[check_p];
+        for (int check_u = 0; check_u < check_power->num_units; check_u++) {
+            int unit_loc_parent = get_parent_location(map, check_power->units[check_u].location);
+            int target_parent = get_parent_location(map, order->target_unit_location);
+            if (unit_loc_parent == target_parent &&
+                check_power->units[check_u].type == UNIT_ARMY) {
+                found_army = 1;
+                break;
+            }
+        }
+        if (found_army) break;
+    }
+    if (!found_army) {
+        return -1;
+    }
+    return 0;
+}
+
+int validate_order(GameState* game, int power_id, const Order* order) {
+    if (!game || !order || power_id < 0 || power_id >= MAX_POWERS) {
+        return -1;
+    }
 
     Power* power = &game->powers[power_id];
     Map* map = game->map;
     PhaseType phase = game->phase;
 
-    // Phase-specific order validation
-    // During retreat phase, only RETREAT and DISBAND orders are allowed
     if (phase == PHASE_SPRING_RETREAT || phase == PHASE_FALL_RETREAT) {
-        if (order->type != ORDER_RETREAT && order->type != ORDER_DISBAND) {
-            return -1;  // Invalid order type for retreat phase
-        }
-        // For retreat orders, validate against dislodged units
-        // Check if this unit is in the retreat list (must be dislodged)
-        int found = 0;
-        for (int r = 0; r < power->num_retreats; r++) {
-            if (power->retreats[r].from_location == order->unit_location &&
-                power->retreats[r].type == order->unit_type) {
-                found = 1;
-                break;
-            }
-        }
-        if (!found) {
-            return -1;  // Unit not dislodged, cannot retreat
-        }
-        return 0;  // Valid retreat/disband order
+        return validate_retreat_order(power, order);
     }
 
-    // During adjustment phase, only BUILD and DISBAND orders are allowed
     if (phase == PHASE_WINTER_ADJUSTMENT) {
         if (order->type != ORDER_BUILD && order->type != ORDER_DISBAND) {
-            return -1;  // Invalid order type for adjustment phase
+            return -1;
         }
-        // Additional validation for builds/disbands would go here
         return 0;
     }
 
@@ -629,169 +707,32 @@ int validate_order(GameState* game, int power_id, const Order* order) {
     // Validate based on order type
     switch (order->type) {
         case ORDER_HOLD:
-            // HOLD is always valid
             return 0;
 
         case ORDER_MOVE:
-            // Check destination is adjacent and reachable by unit type
             if (order->target_location < 0 || order->target_location >= map->num_locations) {
-                return -1;  // Invalid destination
+                return -1;
             }
-            // Check not moving to same location
             if (order->target_location == unit->location) {
-                return -1;  // Cannot move to own sector
+                return -1;
             }
-            // Check if move is adjacent (normal move)
             if (can_move(map, unit->type, unit->location, order->target_location)) {
-                return 0;  // Valid adjacent move
+                return 0;
             }
-            // If not adjacent and unit is army, check for convoy path
             if (unit->type == UNIT_ARMY && is_convoyed_move(game, unit->location, order->target_location)) {
-                return 0;  // Valid convoy move
+                return 0;
             }
-            // DATC 6.D.8: Even without convoy orders, if convoy was POSSIBLE the order is legal
-            // (it just fails - army still tried to move, can't receive hold support)
             if (unit->type == UNIT_ARMY && is_convoy_possible(game, unit->location, order->target_location)) {
-                return 0;  // Legal order (convoy was possible)
+                return 0;
             }
-            return -1;  // Not adjacent and no convoy path possible
+            return -1;
 
         case ORDER_SUPPORT_HOLD:
         case ORDER_SUPPORT_MOVE:
-            // Check target unit location exists
-            if (order->target_unit_location < 0 || order->target_unit_location >= map->num_locations) {
-                return -1;
-            }
-            // DATC 6.D.34: Can't support a move to where you're already standing
-            // A unit can only support to areas it can move to itself, and you can't move to yourself
-            if (order->type == ORDER_SUPPORT_MOVE) {
-                int dest_parent = get_parent_location(map, order->dest_location);
-                int unit_parent = get_parent_location(map, unit->location);
-                if (dest_parent == unit_parent) {
-                    return -1;  // Can't support move to own location
-                }
-                // DATC 6.A.5: Can't support a move where the supported unit moves to its own location
-                int supported_parent = get_parent_location(map, order->target_unit_location);
-                if (dest_parent == supported_parent) {
-                    return -1;  // Can't support move to same location (illegal move)
-                }
-            }
-            // Check supporting unit can reach the target location or destination
-            // (supporting unit must be adjacent to either the supported unit or the destination)
-            int can_support = 0;
-            if (can_move(map, unit->type, unit->location, order->target_unit_location)) {
-                can_support = 1;  // Adjacent to supported unit
-            }
-            if (order->dest_location >= 0 && order->dest_location < map->num_locations) {
-                // Check if supporter can reach destination or any of its coasts (DATC 6.B.7-9)
-                if (can_move(map, unit->type, unit->location, order->dest_location)) {
-                    can_support = 1;  // Adjacent to destination
-                } else {
-                    // Try all coasts of the destination
-                    int coasts[10];
-                    int num_coasts;
-                    find_coasts(map, order->dest_location, coasts, &num_coasts);
-                    for (int c = 0; c < num_coasts; c++) {
-                        if (can_move(map, unit->type, unit->location, coasts[c])) {
-                            can_support = 1;  // Adjacent to a coast of destination
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!can_support) {
-                return -1;  // Can't support this move
-            }
-            // DATC 6.D.31: Can't support a move that requires convoy through your location
-            // If supporter is a fleet that could convoy, and the supported move requires
-            // that fleet to convoy (not support), the support is impossible
-            if (order->type == ORDER_SUPPORT_MOVE && unit->type == UNIT_FLEET &&
-                can_fleet_convoy(map, unit->location)) {
-                // Check if supported unit is an army making a non-adjacent move
-                int supported_is_army = 0;
-                for (int check_p = 0; check_p < MAX_POWERS; check_p++) {
-                    Power* check_power = &game->powers[check_p];
-                    for (int check_u = 0; check_u < check_power->num_units; check_u++) {
-                        int check_loc_parent = get_parent_location(map, check_power->units[check_u].location);
-                        int target_parent = get_parent_location(map, order->target_unit_location);
-                        if (check_loc_parent == target_parent &&
-                            check_power->units[check_u].type == UNIT_ARMY) {
-                            supported_is_army = 1;
-                            break;
-                        }
-                    }
-                    if (supported_is_army) break;
-                }
-                if (supported_is_army) {
-                    // Check if the army move is non-adjacent (requires convoy)
-                    if (!can_move(map, UNIT_ARMY, order->target_unit_location, order->dest_location)) {
-                        // The move requires convoy - check if this fleet is the only path
-                        // Collect all fleets EXCEPT this one that could convoy
-                        int other_fleets[MAX_LOCATIONS];
-                        int num_other = 0;
-                        for (int cp = 0; cp < MAX_POWERS; cp++) {
-                            Power* cpwr = &game->powers[cp];
-                            for (int cu = 0; cu < cpwr->num_units; cu++) {
-                                if (cpwr->units[cu].type == UNIT_FLEET &&
-                                    cpwr->units[cu].location != unit->location &&
-                                    can_fleet_convoy(map, cpwr->units[cu].location)) {
-                                    other_fleets[num_other++] = cpwr->units[cu].location;
-                                }
-                            }
-                        }
-                        // Check if a convoy path exists WITHOUT this fleet
-                        int path_without = (num_other > 0 &&
-                            find_convoy_path(map, order->target_unit_location,
-                                           order->dest_location, other_fleets, num_other));
-                        if (!path_without) {
-                            // No path without this fleet - support is impossible
-                            return -1;
-                        }
-                    }
-                }
-            }
-            return 0;
+            return validate_support_order(game, unit, order);
 
         case ORDER_CONVOY:
-            // Convoy must be given by a fleet
-            if (unit->type != UNIT_FLEET) {
-                return -1;  // Only fleets can convoy
-            }
-            // Check fleet is in WATER (not COAST) - can't convoy from coastal areas
-            if (!can_fleet_convoy(map, unit->location)) {
-                return -1;  // Fleet must be in water to convoy
-            }
-            // Check convoyed unit location exists
-            if (order->target_unit_location < 0 || order->target_unit_location >= map->num_locations) {
-                return -1;
-            }
-            // Check destination exists
-            if (order->dest_location < 0 || order->dest_location >= map->num_locations) {
-                return -1;
-            }
-            // DATC 6.A.7: Only ARMIES can be convoyed
-            // Check if there's an army at the target_unit_location (any power)
-            {
-                int found_army = 0;
-                for (int check_p = 0; check_p < MAX_POWERS; check_p++) {
-                    Power* check_power = &game->powers[check_p];
-                    for (int check_u = 0; check_u < check_power->num_units; check_u++) {
-                        int unit_loc_parent = get_parent_location(map, check_power->units[check_u].location);
-                        int target_parent = get_parent_location(map, order->target_unit_location);
-                        if (unit_loc_parent == target_parent &&
-                            check_power->units[check_u].type == UNIT_ARMY) {
-                            found_army = 1;
-                            break;
-                        }
-                    }
-                    if (found_army) break;
-                }
-                if (!found_army) {
-                    return -1;  // No army at location to convoy (DATC 6.A.7)
-                }
-            }
-            // Convoy order is valid if fleet can convoy
-            return 0;
+            return validate_convoy_order(game, unit, order);
 
         case ORDER_BUILD:
             // Can only build in home centers during adjustment phase
@@ -978,167 +919,122 @@ int is_convoy_possible(GameState* game, int from, int to) {
 // DATC 6.G.7: Check if a specific fleet can be on a valid convoy path
 // A fleet's convoy order is only valid if the fleet can actually participate
 // in a path from the origin to destination
-int can_fleet_convoy_this_path(GameState* game, int fleet_loc, int from, int to) {
-    // Fleet must be on a water space that allows convoy
-    if (!can_fleet_convoy(game->map, fleet_loc)) {
-        return 0;
-    }
-
-    // Collect all fleets that could convoy (from all powers)
-    int all_fleets[MAX_LOCATIONS];
-    int num_fleets = 0;
+// Collect all fleets that can participate in convoys
+static int collect_convoying_fleets(GameState* game, int* fleets) {
+    int count = 0;
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
         for (int u = 0; u < power->num_units; u++) {
             Unit* unit = &power->units[u];
             if (unit->type == UNIT_FLEET && can_fleet_convoy(game->map, unit->location)) {
-                all_fleets[num_fleets++] = unit->location;
-                if (num_fleets >= MAX_LOCATIONS) break;
+                fleets[count++] = unit->location;
+                if (count >= MAX_LOCATIONS) return count;
             }
         }
-        if (num_fleets >= MAX_LOCATIONS) break;
+    }
+    return count;
+}
+
+// Check if a fleet location is adjacent to a land location (considering coasts)
+static int is_fleet_adjacent_to_land(Map* map, int fleet_loc, int land_loc) {
+    int land_parent = get_parent_location(map, land_loc);
+    Location* fleet = &map->locations[fleet_loc];
+    for (int i = 0; i < fleet->num_adjacent; i++) {
+        if (get_parent_location(map, fleet->adjacencies[i]) == land_parent) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Check if a location is in the fleet array
+static int is_convoying_fleet(int loc, int* fleets, int num_fleets) {
+    for (int f = 0; f < num_fleets; f++) {
+        if (fleets[f] == loc) return 1;
+    }
+    return 0;
+}
+
+// BFS to check if target_fleet is reachable from land_loc through fleets
+static int can_reach_fleet_from_land(Map* map, int land_loc, int target_fleet,
+                                      int* fleets, int num_fleets) {
+    int land_parent = get_parent_location(map, land_loc);
+    int visited[MAX_LOCATIONS] = {0};
+    int queue[MAX_LOCATIONS];
+    int queue_start = 0, queue_end = 0;
+
+    visited[land_loc] = 1;
+    visited[land_parent] = 1;
+
+    for (int f = 0; f < num_fleets; f++) {
+        int f_loc = fleets[f];
+        if (!visited[f_loc] && is_fleet_adjacent_to_land(map, f_loc, land_loc)) {
+            if (f_loc == target_fleet) return 1;
+            queue[queue_end++] = f_loc;
+            visited[f_loc] = 1;
+        }
     }
 
-    // Check if the specific fleet can be part of any convoy path from->to
-    // For a fleet to be part of a valid path:
-    // 1. There must be a way to reach the fleet from the origin
-    // 2. There must be a way to reach the destination from the fleet
-    // We test this by checking if the path still works when we force this fleet to be included
+    while (queue_start < queue_end) {
+        int curr = queue[queue_start++];
+        Location* curr_loc = &map->locations[curr];
 
-    // Simple approach: check if this fleet is on ANY valid convoy path
-    // by verifying it's reachable from origin and can reach destination
+        for (int i = 0; i < curr_loc->num_adjacent; i++) {
+            int adj = curr_loc->adjacencies[i];
+            if (!visited[adj] && is_convoying_fleet(adj, fleets, num_fleets)) {
+                if (adj == target_fleet) return 1;
+                visited[adj] = 1;
+                queue[queue_end++] = adj;
+            }
+        }
+    }
+    return 0;
+}
+
+// BFS to check if destination land is reachable from a fleet through other fleets
+static int can_reach_land_from_fleet(Map* map, int start_fleet, int land_loc,
+                                      int* fleets, int num_fleets) {
+    if (is_fleet_adjacent_to_land(map, start_fleet, land_loc)) return 1;
+
+    int visited[MAX_LOCATIONS] = {0};
+    int queue[MAX_LOCATIONS];
+    int queue_start = 0, queue_end = 0;
+
+    queue[queue_end++] = start_fleet;
+    visited[start_fleet] = 1;
+
+    while (queue_start < queue_end) {
+        int curr = queue[queue_start++];
+        Location* curr_loc = &map->locations[curr];
+
+        for (int i = 0; i < curr_loc->num_adjacent; i++) {
+            int adj = curr_loc->adjacencies[i];
+            if (!visited[adj]) {
+                if (is_convoying_fleet(adj, fleets, num_fleets)) {
+                    if (is_fleet_adjacent_to_land(map, adj, land_loc)) return 1;
+                    visited[adj] = 1;
+                    queue[queue_end++] = adj;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+int can_fleet_convoy_this_path(GameState* game, int fleet_loc, int from, int to) {
+    if (!can_fleet_convoy(game->map, fleet_loc)) return 0;
+
+    int all_fleets[MAX_LOCATIONS];
+    int num_fleets = collect_convoying_fleets(game, all_fleets);
 
     Map* map = game->map;
-    Location* fleet = &map->locations[fleet_loc];
 
-    // Step 1: Can we reach this fleet from origin?
-    // Fleet must be adjacent to origin or reachable through other fleets from origin
-    int can_reach_from_origin = 0;
+    int can_reach_from_origin = is_fleet_adjacent_to_land(map, fleet_loc, from) ||
+        can_reach_fleet_from_land(map, from, fleet_loc, all_fleets, num_fleets);
 
-    // Check direct adjacency to origin (or origin's coasts)
-    int from_parent = get_parent_location(map, from);
-    for (int i = 0; i < fleet->num_adjacent; i++) {
-        int adj = fleet->adjacencies[i];
-        int adj_parent = get_parent_location(map, adj);
-        if (adj_parent == from_parent) {
-            can_reach_from_origin = 1;
-            break;
-        }
-    }
+    if (!can_reach_from_origin) return 0;
 
-    if (!can_reach_from_origin) {
-        // Check if reachable through other fleets (BFS from origin)
-        int visited[MAX_LOCATIONS] = {0};
-        int queue[MAX_LOCATIONS];
-        int queue_start = 0, queue_end = 0;
-
-        // Start from origin
-        visited[from] = 1;
-        visited[from_parent] = 1;
-
-        // Find fleets adjacent to origin
-        for (int f = 0; f < num_fleets; f++) {
-            int f_loc = all_fleets[f];
-            Location* f_ptr = &map->locations[f_loc];
-            for (int i = 0; i < f_ptr->num_adjacent; i++) {
-                int adj = f_ptr->adjacencies[i];
-                int adj_parent = get_parent_location(map, adj);
-                if (adj_parent == from_parent && !visited[f_loc]) {
-                    queue[queue_end++] = f_loc;
-                    visited[f_loc] = 1;
-                    if (f_loc == fleet_loc) {
-                        can_reach_from_origin = 1;
-                    }
-                    break;
-                }
-            }
-        }
-
-        // BFS through fleets
-        while (queue_start < queue_end && !can_reach_from_origin) {
-            int curr = queue[queue_start++];
-            Location* curr_loc = &map->locations[curr];
-
-            for (int i = 0; i < curr_loc->num_adjacent; i++) {
-                int adj = curr_loc->adjacencies[i];
-                if (!visited[adj]) {
-                    // Check if it's one of our fleets
-                    for (int f = 0; f < num_fleets; f++) {
-                        if (all_fleets[f] == adj) {
-                            visited[adj] = 1;
-                            queue[queue_end++] = adj;
-                            if (adj == fleet_loc) {
-                                can_reach_from_origin = 1;
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (!can_reach_from_origin) {
-        return 0;
-    }
-
-    // Step 2: Can we reach destination from this fleet?
-    // Similar check - fleet must be adjacent to dest or able to reach it through other fleets
-    int can_reach_dest = 0;
-    int to_parent = get_parent_location(map, to);
-
-    // Check direct adjacency to destination
-    for (int i = 0; i < fleet->num_adjacent; i++) {
-        int adj = fleet->adjacencies[i];
-        int adj_parent = get_parent_location(map, adj);
-        if (adj_parent == to_parent) {
-            can_reach_dest = 1;
-            break;
-        }
-    }
-
-    if (!can_reach_dest) {
-        // BFS from this fleet to find if we can reach destination through other fleets
-        int visited2[MAX_LOCATIONS] = {0};
-        int queue2[MAX_LOCATIONS];
-        int q2_start = 0, q2_end = 0;
-
-        queue2[q2_end++] = fleet_loc;
-        visited2[fleet_loc] = 1;
-
-        while (q2_start < q2_end && !can_reach_dest) {
-            int curr = queue2[q2_start++];
-            Location* curr_loc = &map->locations[curr];
-
-            // Check if this fleet is adjacent to destination
-            for (int i = 0; i < curr_loc->num_adjacent; i++) {
-                int adj = curr_loc->adjacencies[i];
-                int adj_parent = get_parent_location(map, adj);
-                if (adj_parent == to_parent) {
-                    can_reach_dest = 1;
-                    break;
-                }
-            }
-
-            if (!can_reach_dest) {
-                // Expand to adjacent fleets
-                for (int i = 0; i < curr_loc->num_adjacent; i++) {
-                    int adj = curr_loc->adjacencies[i];
-                    if (!visited2[adj]) {
-                        for (int f = 0; f < num_fleets; f++) {
-                            if (all_fleets[f] == adj) {
-                                visited2[adj] = 1;
-                                queue2[q2_end++] = adj;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    return can_reach_dest;
+    return can_reach_land_from_fleet(map, fleet_loc, to, all_fleets, num_fleets);
 }
 
 // Get list of fleets offering to convoy an army from start to end
@@ -2005,21 +1901,19 @@ static void calculate_strengths(GameState* game, MoveAttempt* attempts, int num_
             }
         }
     }
-    
+
 }
 
-static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempts, int num_attempts,
-                                             SupportOrder* supports, int num_supports) {
-    // DATC 6.C.5: Disrupt convoys BEFORE circular movement calculation
-    // Check if convoying fleets will be dislodged (fleet battles are independent of cycles)
+// Check if convoying fleets will be dislodged before circular movement calculation (DATC 6.C.5)
+static void check_convoy_disruption_early(GameState* game, MoveAttempt* attempts, int num_attempts,
+                                          SupportOrder* supports, int num_supports) {
     for (int i = 0; i < num_attempts; i++) {
         MoveAttempt* attempt = &attempts[i];
 
         if (!attempt->is_convoyed || !attempt->is_valid || attempt->to_location < 0) {
-            continue;  // Not a convoyed move
+            continue;
         }
 
-        // Check if any convoying fleet will be dislodged
         int valid_fleets[MAX_LOCATIONS];
         int num_valid_fleets = 0;
 
@@ -2032,11 +1926,9 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                     ord->dest_location == attempt->to_location) {
                     int fleet_loc = ord->unit_location;
 
-                    // Check if this fleet will be dislodged
                     int fleet_dislodged = 0;
-                    int fleet_def = 1;  // Base defense
+                    int fleet_def = 1;
 
-                    // Calculate fleet's defense strength
                     for (int s = 0; s < num_supports; s++) {
                         if (!supports[s].is_cut && supports[s].is_valid &&
                             supports[s].supported_location == fleet_loc &&
@@ -2045,7 +1937,6 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                         }
                     }
 
-                    // Check if fleet will be dislodged (must have single strongest attacker)
                     int max_attack = 0;
                     int num_with_max = 0;
                     int fleet_parent = get_parent_location(game->map, fleet_loc);
@@ -2060,8 +1951,7 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                             }
                         }
                     }
-                    // Fleet is dislodged only if single strongest attacker beats defense
-                    // (beleaguered garrison: multiple equal attackers bounce)
+
                     if (num_with_max == 1 && max_attack > fleet_def) {
                         fleet_dislodged = 1;
                     }
@@ -2073,41 +1963,35 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             }
         }
 
-        // Check if convoy path still exists with non-dislodged fleets
         if (num_valid_fleets == 0 ||
             !find_convoy_path(game->map, attempt->from_location,
                              attempt->to_location, valid_fleets, num_valid_fleets)) {
-            // Convoy will be disrupted - mark this move as invalid for cycle detection
             attempt->convoy_disrupted = 1;
         }
     }
+}
 
-    // Step 5: Handle circular movements and chains
-    // Detect and resolve cycles like A→B, B→C, C→A
+// Detect and resolve circular movement chains (DATC 6.E)
+static void resolve_circular_movements(GameState* game, MoveAttempt* attempts, int num_attempts) {
     for (int i = 0; i < num_attempts; i++) {
         MoveAttempt* attempt = &attempts[i];
 
         if (attempt->can_move || !attempt->is_valid || attempt->to_location < 0 ||
             attempt->convoy_disrupted) {
-            continue;  // Already resolved, not moving, or convoy disrupted
+            continue;
         }
 
-        // Try to find a cycle starting from this unit
         int visited[MAX_UNITS] = {0};
         int cycle_indices[MAX_UNITS];
         int cycle_len = 0;
-
         int current_idx = i;
         int found_cycle = 0;
 
-        // Follow the chain of moves
         while (current_idx >= 0 && cycle_len < MAX_UNITS) {
             if (visited[current_idx]) {
-                // Found a cycle - check if it starts at our original unit
                 for (int c = 0; c < cycle_len; c++) {
                     if (cycle_indices[c] == current_idx) {
                         found_cycle = 1;
-                        // Trim cycle to only include units in the actual cycle
                         for (int k = c; k < cycle_len; k++) {
                             cycle_indices[k - c] = cycle_indices[k];
                         }
@@ -2121,7 +2005,6 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             visited[current_idx] = 1;
             cycle_indices[cycle_len++] = current_idx;
 
-            // Find unit at destination
             int next_idx = -1;
             int dest = attempts[current_idx].to_location;
             for (int j = 0; j < num_attempts; j++) {
@@ -2131,30 +2014,25 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                     break;
                 }
             }
-
             current_idx = next_idx;
         }
 
-        // If we found a cycle, check if all units in cycle can move
         if (found_cycle && cycle_len >= 2) {
             int can_resolve_cycle = 1;
 
-            // Check if any external unit is attacking into the cycle
+            // Check for external attackers into the cycle
             for (int c = 0; c < cycle_len; c++) {
                 int cycle_dest = attempts[cycle_indices[c]].to_location;
                 int cycle_strength = attempts[cycle_indices[c]].attack_strength;
                 int cycle_dest_parent = get_parent_location(game->map, cycle_dest);
 
-                // Check for external attackers
                 for (int j = 0; j < num_attempts; j++) {
                     if (!attempts[j].is_valid || attempts[j].to_location < 0) {
                         continue;
                     }
 
-                    // Compare parent locations for split coast handling (DATC 6.B)
                     int j_dest_parent = get_parent_location(game->map, attempts[j].to_location);
                     if (j_dest_parent == cycle_dest_parent) {
-                        // Is this attacker part of the cycle?
                         int in_cycle = 0;
                         for (int k = 0; k < cycle_len; k++) {
                             if (j == cycle_indices[k]) {
@@ -2164,54 +2042,41 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                         }
 
                         if (!in_cycle && attempts[j].attack_strength >= cycle_strength) {
-                            // External unit blocks the cycle
                             can_resolve_cycle = 0;
                             break;
                         }
                     }
                 }
-
                 if (!can_resolve_cycle) break;
             }
 
-            // DATC 6.E.2: Check for same-power swap (2-unit cycle)
-            // Same-power units cannot swap (self-dislodgement prevention)
+            // DATC 6.E.2-3, 6.E.15: Handle 2-unit cycles (head-to-head and swaps)
             if (cycle_len == 2 && can_resolve_cycle) {
                 int unit1_power = attempts[cycle_indices[0]].unit_power;
                 int unit2_power = attempts[cycle_indices[1]].unit_power;
                 if (unit1_power == unit2_power) {
-                    // Same power trying to swap - not allowed
                     can_resolve_cycle = 0;
                 }
 
-                // Head-to-head check: in a 2-unit cycle without convoy, compare attack strengths
-                // DATC 6.E.3: Two units can only swap via convoy, not by direct move
-                // DATC 6.E.15: In head-to-head, compare ATTACK strengths, not attack vs defense
                 if (can_resolve_cycle) {
                     MoveAttempt* unit1 = &attempts[cycle_indices[0]];
                     MoveAttempt* unit2 = &attempts[cycle_indices[1]];
-                    // If neither unit is convoying, it's a direct swap attempt (not allowed)
                     if (!unit1->is_convoyed && !unit2->is_convoyed) {
-                        // Direct head-to-head: compare attack strengths
                         if (unit1->attack_strength == unit2->attack_strength) {
-                            // Equal attack strengths - both bounce (DATC 6.E.15)
                             can_resolve_cycle = 0;
                         } else if (unit1->attack_strength > unit2->attack_strength) {
-                            // Unit 1 wins, unit 2 is dislodged (if different powers)
                             if (unit1->unit_power == unit2->unit_power) {
-                                can_resolve_cycle = 0;  // Can't dislodge own unit
+                                can_resolve_cycle = 0;
                             }
                         } else {
-                            // Unit 2 wins, unit 1 is dislodged (if different powers)
                             if (unit2->unit_power == unit1->unit_power) {
-                                can_resolve_cycle = 0;  // Can't dislodge own unit
+                                can_resolve_cycle = 0;
                             }
                         }
                     }
                 }
             }
 
-            // If cycle can resolve, mark all units in cycle as can_move
             if (can_resolve_cycle) {
                 for (int c = 0; c < cycle_len; c++) {
                     attempts[cycle_indices[c]].can_move = 1;
@@ -2219,8 +2084,11 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             }
         }
     }
+}
 
-    // Step 5b: Iteratively resolve remaining moves where destination is being vacated
+// Iteratively resolve moves where destination is being vacated (DATC 6.E.1, 6.F.8, 6.G)
+static void resolve_vacated_destinations(GameState* game, MoveAttempt* attempts, int num_attempts,
+                                          SupportOrder* supports, int num_supports) {
     int changed = 1;
     int iterations = 0;
     while (changed && iterations < 20) {
@@ -2231,7 +2099,7 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             MoveAttempt* attempt = &attempts[i];
 
             if (attempt->can_move || !attempt->is_valid || attempt->to_location < 0) {
-                continue;  // Already resolved or not moving
+                continue;
             }
 
             int destination = attempt->to_location;
@@ -2248,11 +2116,9 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             }
 
             if (!dest_unit_moving) {
-                continue;  // Destination not being vacated
+                continue;
             }
 
-            // Check if we're the only/strongest attacker to this destination
-            // Compare parent locations for split coasts (DATC 6.B.4-7)
             int is_strongest = 1;
             int max_str = attempt->attack_strength;
             int num_at_max = 1;
@@ -2264,16 +2130,13 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                     continue;
                 }
 
-                // Compare parent locations - moves to different coasts conflict (DATC 6.B.4)
                 int j_dest_parent = get_parent_location(game->map, attempts[j].to_location);
                 if (j_dest_parent != dest_parent) {
                     continue;
                 }
 
-                // DATC 6.E.1: Dislodged unit has no effect on attacker's area
-                // Check if this competing attacker was dislodged (lost a battle at its origin)
+                // Check if competing attacker was dislodged
                 int attacker_dislodged = 0;
-                // First check the dislodged list (for units dislodged in step 6)
                 for (int d = 0; d < game->num_dislodged; d++) {
                     if (game->dislodged[d].power_id == attempts[j].unit_power &&
                         game->dislodged[d].from_location == attempts[j].from_location) {
@@ -2281,57 +2144,42 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                         break;
                     }
                 }
-                // Also check if a successful mover is taking this attacker's origin
-                // (means they lost a head-to-head or were attacked and lost)
                 if (!attacker_dislodged) {
                     for (int k = 0; k < num_attempts; k++) {
                         if (attempts[k].can_move &&
                             attempts[k].to_location == attempts[j].from_location &&
                             attempts[k].attack_strength > attempts[j].defend_strength) {
-                            // DATC 6.G: Check for convoy swap - if this is a head-to-head with convoy,
-                            // the "dislodged" unit is actually swapping, not being dislodged
+                            // Check for convoy swap
                             int is_convoy_swap = 0;
                             if (attempts[j].is_convoyed || attempts[k].is_convoyed) {
-                                // At least one unit is convoyed - check if it's a head-to-head swap
-                                int j_dest_parent = get_parent_location(game->map, attempts[j].to_location);
+                                int j_dest_parent_inner = get_parent_location(game->map, attempts[j].to_location);
                                 int k_from_parent = get_parent_location(game->map, attempts[k].from_location);
-                                if (j_dest_parent == k_from_parent) {
-                                    // Unit j is going to unit k's origin - this is a swap, not dislodgement
+                                if (j_dest_parent_inner == k_from_parent) {
                                     is_convoy_swap = 1;
                                 }
                             }
 
                             if (is_convoy_swap) {
-                                // Convoy swap - unit j is not dislodged, it's swapping
                                 break;
                             }
 
-                            // DATC 6.G.10 / 4.A.7 choice (b): If the attacker arrived via convoy,
-                            // the dislodged unit CAN still contest destinations (including
-                            // the attacker's origin) because there's no head-to-head battle.
-                            // Only direct (non-convoyed) dislodgement prevents contesting.
                             if (!attempts[k].is_convoyed) {
-                                // Direct dislodgement - unit can't contest
                                 attacker_dislodged = 1;
                             }
-                            // If attacker used convoy, dislodged unit CAN still contest
                             break;
                         }
                     }
                 }
                 if (attacker_dislodged) {
-                    continue;  // Dislodged attacker doesn't contest destination
+                    continue;
                 }
 
-                // DATC 6.F.8: Convoyed moves whose convoy will be disrupted don't contest
-                // Check if this is a convoyed move and its convoying fleet(s) will be dislodged
+                // Check if convoyed move's convoy will be disrupted
                 if (attempts[j].is_convoyed) {
-                    // Check if convoy path will be disrupted
                     int convoy_will_fail = 0;
                     int valid_fleets[MAX_LOCATIONS];
                     int num_valid_fleets = 0;
 
-                    // Collect all convoying fleets that WON'T be dislodged
                     for (int p = 0; p < MAX_POWERS; p++) {
                         Power* pwr = &game->powers[p];
                         for (int o = 0; o < pwr->num_orders; o++) {
@@ -2341,14 +2189,11 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                                 ord->dest_location == attempts[j].to_location) {
                                 int fleet_loc = ord->unit_location;
 
-                                // Check if this fleet is being dislodged
                                 int fleet_dislodged = 0;
                                 for (int k = 0; k < num_attempts; k++) {
                                     if (attempts[k].can_move &&
                                         attempts[k].to_location == fleet_loc) {
-                                        // Fleet is being attacked by successful mover
-                                        // Check if attack strength > fleet defense
-                                        int fleet_def = 1;  // Base defense
+                                        int fleet_def = 1;
                                         for (int s = 0; s < num_supports; s++) {
                                             if (!supports[s].is_cut && supports[s].is_valid &&
                                                 supports[s].supported_location == fleet_loc &&
@@ -2370,7 +2215,6 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                         }
                     }
 
-                    // Check if a valid convoy path still exists
                     if (num_valid_fleets == 0 ||
                         !find_convoy_path(game->map, attempts[j].from_location,
                                          attempts[j].to_location, valid_fleets, num_valid_fleets)) {
@@ -2378,7 +2222,7 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                     }
 
                     if (convoy_will_fail) {
-                        continue;  // Disrupted convoy doesn't contest destination
+                        continue;
                     }
                 }
 
@@ -2390,54 +2234,45 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                 }
             }
 
-            // Can move if strongest attacker
             if (is_strongest && num_at_max == 1) {
                 attempt->can_move = 1;
                 changed = 1;
             }
         }
     }
-    
-    // Step 6: Determine and record dislodgements
+}
+
+// Record dislodgements from successful attackers (Step 6 and 6a)
+static void record_dislodgements(GameState* game, MoveAttempt* attempts, int num_attempts) {
+    // Step 6: Check successful movers dislodging defenders
     for (int i = 0; i < num_attempts; i++) {
         MoveAttempt* attacker = &attempts[i];
 
         if (!attacker->can_move || attacker->to_location < 0) {
-            continue;  // Not moving
+            continue;
         }
 
-        // Check if we're dislodging a unit
-        // Compare parent locations for split-coast handling (DATC 6.B)
         int attacker_dest_parent = get_parent_location(game->map, attacker->to_location);
         for (int j = 0; j < num_attempts; j++) {
             MoveAttempt* defender = &attempts[j];
             int defender_loc_parent = get_parent_location(game->map, defender->from_location);
 
             if (defender_loc_parent == attacker_dest_parent) {
-                // There's a unit at our destination
-                // Skip if defender is successfully moving away (DATC 6.E.1, 6.E.9)
                 int attacker_from_parent = get_parent_location(game->map, attacker->from_location);
                 int defender_to_parent = defender->to_location >= 0 ?
                     get_parent_location(game->map, defender->to_location) : -1;
                 if (defender->can_move && defender->to_location != -1 &&
                     defender_to_parent != attacker_from_parent) {
-                    // Defender is vacating, not in head-to-head, no dislodgement
                     break;
                 }
 
-                // DATC 6.G: Convoy swap - if defender is in head-to-head AND either unit
-                // is convoyed, they swap positions (no dislodgement)
                 if (defender->can_move && defender_to_parent == attacker_from_parent) {
-                    // This is a head-to-head situation
                     if (attacker->is_convoyed || defender->is_convoyed) {
-                        // Convoy swap - no dislodgement
                         break;
                     }
                 }
 
-                // It's dislodged if we have strength to dislodge it
                 if (attacker->attack_strength > defender->defend_strength) {
-                    // Check if already dislodged (avoid duplicates)
                     int already_dislodged = 0;
                     for (int d = 0; d < game->num_dislodged; d++) {
                         if (game->dislodged[d].power_id == defender->unit_power &&
@@ -2448,35 +2283,28 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
                     }
 
                     if (!already_dislodged && game->num_dislodged < MAX_UNITS) {
-                        // Record dislodgement
                         DislodgedUnit* dislodged = &game->dislodged[game->num_dislodged++];
                         dislodged->type = defender->unit_type;
                         dislodged->power_id = defender->unit_power;
                         dislodged->from_location = defender->from_location;
                         dislodged->dislodged_by_location = attacker->from_location;
                         dislodged->attacker_used_convoy = attacker->is_convoyed ? 1 : 0;
-                        dislodged->num_possible_retreats = 0;  // Calculate later in retreat phase
+                        dislodged->num_possible_retreats = 0;
                     }
-
-                    // Mark defender as not able to stay
-                    // We'll remove the unit when applying moves
                 }
                 break;
             }
         }
     }
 
-    // Step 6a: Check for units that failed to move but are being attacked at their origin
-    // This handles: bounced moves, void orders, and any unit that stays put but is attacked
+    // Step 6a: Check stationary units being attacked
     for (int i = 0; i < num_attempts; i++) {
         MoveAttempt* stationary_unit = &attempts[i];
 
-        // Skip units that successfully moved
         if (stationary_unit->can_move) {
             continue;
         }
 
-        // This unit is staying at its location - check if it's being attacked
         int strongest_attacker_idx = -1;
         int strongest_attack_strength = stationary_unit->defend_strength;
 
@@ -2484,12 +2312,10 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             MoveAttempt* attacker = &attempts[j];
 
             if (!attacker->can_move || attacker->to_location < 0) {
-                continue;  // Not a successful attack
+                continue;
             }
 
-            // Check if this attacker is moving to the stationary unit's location
             if (attacker->to_location == stationary_unit->from_location) {
-                // Found an attacker - check if it's stronger
                 if (attacker->attack_strength > strongest_attack_strength) {
                     strongest_attack_strength = attacker->attack_strength;
                     strongest_attacker_idx = j;
@@ -2497,11 +2323,9 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             }
         }
 
-        // If we found a strong enough attacker, dislodge this unit
         if (strongest_attacker_idx >= 0) {
             MoveAttempt* attacker = &attempts[strongest_attacker_idx];
 
-            // Check if already dislodged (avoid duplicates)
             int already_dislodged = 0;
             for (int d = 0; d < game->num_dislodged; d++) {
                 if (game->dislodged[d].power_id == stationary_unit->unit_power &&
@@ -2512,17 +2336,24 @@ static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempt
             }
 
             if (!already_dislodged && game->num_dislodged < MAX_UNITS) {
-                // Record dislodgement
                 DislodgedUnit* dislodged = &game->dislodged[game->num_dislodged++];
                 dislodged->type = stationary_unit->unit_type;
                 dislodged->power_id = stationary_unit->unit_power;
                 dislodged->from_location = stationary_unit->from_location;
                 dislodged->dislodged_by_location = attacker->from_location;
                 dislodged->attacker_used_convoy = attacker->is_convoyed ? 1 : 0;
-                dislodged->num_possible_retreats = 0;  // Calculate later in retreat phase
+                dislodged->num_possible_retreats = 0;
             }
         }
     }
+}
+
+static void resolve_conflicts_and_circular(GameState* game, MoveAttempt* attempts, int num_attempts,
+                                             SupportOrder* supports, int num_supports) {
+    check_convoy_disruption_early(game, attempts, num_attempts, supports, num_supports);
+    resolve_circular_movements(game, attempts, num_attempts);
+    resolve_vacated_destinations(game, attempts, num_attempts, supports, num_supports);
+    record_dislodgements(game, attempts, num_attempts);
 
     // Step 6b: Check convoy disruption and handle support cutting for convoyed moves
     // For convoyed moves:
@@ -3882,13 +3713,165 @@ void resolve_movement_phase(GameState* game) {
     save_results_and_finalize(game, attempts, num_attempts, supports, num_supports);
 }
 
-void resolve_retreat_phase(GameState* game) {
-    // Process retreat orders
-    // 1. Parse retreat orders from power->orders[]
-    // 2. Check for conflicts (multiple units retreating to same location)
-    // 3. Move units or disband them
+// Check if a unit was dislodged (has pending retreat)
+static int is_unit_dislodged(Power* power, int unit_location) {
+    for (int r = 0; r < power->num_retreats; r++) {
+        if (power->retreats[r].from_location == unit_location) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
-    // Initialize all order results to NONE
+// Validate retreat orders: mark invalid order types and non-dislodged unit orders as VOID
+static void validate_retreat_orders(GameState* game) {
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        for (int o = 0; o < power->num_orders; o++) {
+            Order* order = &power->orders[o];
+            if (order->type != ORDER_RETREAT && order->type != ORDER_DISBAND) {
+                order->result = RESULT_VOID;
+            } else if (!is_unit_dislodged(power, order->unit_location)) {
+                order->result = RESULT_VOID;
+            }
+        }
+    }
+}
+
+// Check if retreat destination is valid for a dislodged unit
+static int is_valid_retreat_destination(DislodgedUnit* dislodged, int target_location) {
+    for (int d = 0; d < dislodged->num_possible_retreats; d++) {
+        if (dislodged->possible_retreats[d].location == target_location) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Check if any unit occupies a location
+static int is_location_occupied(GameState* game, int location) {
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        for (int u = 0; u < power->num_units; u++) {
+            if (power->units[u].location == location) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+// Process a single dislodged unit's retreat order
+// Returns the destination (-1 for disband)
+static int process_single_retreat(GameState* game, Power* power, DislodgedUnit* dislodged) {
+    for (int o = 0; o < power->num_orders; o++) {
+        Order* order = &power->orders[o];
+
+        if (order->type == ORDER_RETREAT && order->unit_location == dislodged->from_location) {
+            int valid = is_valid_retreat_destination(dislodged, order->target_location);
+            int occupied = valid && is_location_occupied(game, order->target_location);
+
+            if (valid && !occupied) {
+                order->result = RESULT_SUCCESS;
+                return order->target_location;
+            }
+            order->result = RESULT_VOID;
+            return -1;
+        }
+
+        if (order->type == ORDER_DISBAND && order->unit_location == dislodged->from_location) {
+            order->result = RESULT_DISBAND;
+            return -1;
+        }
+    }
+    return -1;
+}
+
+// Collect retreat destinations for all dislodged units
+static int collect_retreat_destinations(GameState* game, int* destinations, int* powers) {
+    int count = 0;
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        if (power->num_retreats == 0) continue;
+
+        if (power->num_orders == 0) {
+            for (int r = 0; r < power->num_retreats; r++) {
+                destinations[count] = -1;
+                powers[count] = p;
+                count++;
+            }
+            continue;
+        }
+
+        for (int r = 0; r < power->num_retreats; r++) {
+            destinations[count] = process_single_retreat(game, power, &power->retreats[r]);
+            powers[count] = p;
+            count++;
+        }
+    }
+    return count;
+}
+
+// Detect and mark conflicts (multiple retreats to same location)
+static void detect_retreat_conflicts(int* destinations, int* has_conflict, int count) {
+    for (int i = 0; i < count; i++) {
+        has_conflict[i] = 0;
+    }
+    for (int i = 0; i < count; i++) {
+        if (destinations[i] == -1) continue;
+        for (int j = i + 1; j < count; j++) {
+            if (destinations[j] == -1) continue;
+            if (destinations[i] == destinations[j]) {
+                has_conflict[i] = 1;
+                has_conflict[j] = 1;
+            }
+        }
+    }
+}
+
+// Apply conflict results to orders and destinations
+static void apply_retreat_conflicts(GameState* game, int* destinations, int* has_conflict, int count) {
+    int order_idx = 0;
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        for (int o = 0; o < power->num_orders; o++) {
+            Order* order = &power->orders[o];
+            if (order->type == ORDER_RETREAT || order->type == ORDER_DISBAND) {
+                if (order_idx < count && has_conflict[order_idx]) {
+                    destinations[order_idx] = -1;
+                    if (order->type == ORDER_RETREAT) {
+                        order->result = RESULT_BOUNCE;
+                    }
+                }
+                order_idx++;
+            }
+        }
+    }
+}
+
+// Apply successful retreats: add units back to game
+static void apply_successful_retreats(GameState* game, int* destinations, int count) {
+    int retreat_idx = 0;
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        for (int r = 0; r < power->num_retreats; r++) {
+            if (retreat_idx < count && destinations[retreat_idx] != -1) {
+                DislodgedUnit* dislodged = &power->retreats[r];
+                Unit new_unit;
+                new_unit.type = dislodged->type;
+                new_unit.location = destinations[retreat_idx];
+                new_unit.power_id = p;
+                new_unit.can_retreat = 0;
+                power->units[power->num_units++] = new_unit;
+            }
+            retreat_idx++;
+        }
+        power->num_retreats = 0;
+    }
+    game->num_dislodged = 0;
+}
+
+void resolve_retreat_phase(GameState* game) {
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
         for (int o = 0; o < power->num_orders; o++) {
@@ -3896,202 +3879,17 @@ void resolve_retreat_phase(GameState* game) {
         }
     }
 
-    int retreat_destinations[MAX_UNITS];  // Where each unit is retreating to (-1 = disband)
+    validate_retreat_orders(game);
+
+    int retreat_destinations[MAX_UNITS];
     int retreat_power[MAX_UNITS];
-    int num_retreat_orders = 0;
+    int has_conflict[MAX_UNITS];
+    int num_retreats = collect_retreat_destinations(game, retreat_destinations, retreat_power);
 
-    // First pass: Mark all non-retreat orders as VOID (only retreats and disbands allowed)
-    // Also mark retreat/disband orders for non-dislodged units as VOID
-    for (int p = 0; p < MAX_POWERS; p++) {
-        Power* power = &game->powers[p];
-        for (int o = 0; o < power->num_orders; o++) {
-            Order* order = &power->orders[o];
-            if (order->type != ORDER_RETREAT && order->type != ORDER_DISBAND) {
-                // Invalid order type for retreat phase
-                order->result = RESULT_VOID;
-            } else {
-                // Retreat or disband order - check if this unit was actually dislodged
-                int unit_dislodged = 0;
-                for (int r = 0; r < power->num_retreats; r++) {
-                    if (power->retreats[r].from_location == order->unit_location) {
-                        unit_dislodged = 1;
-                        break;
-                    }
-                }
-                if (!unit_dislodged) {
-                    // Retreat/disband order for non-dislodged unit
-                    order->result = RESULT_VOID;
-                }
-            }
-        }
-    }
+    detect_retreat_conflicts(retreat_destinations, has_conflict, num_retreats);
+    apply_retreat_conflicts(game, retreat_destinations, has_conflict, num_retreats);
+    apply_successful_retreats(game, retreat_destinations, num_retreats);
 
-    // Process retreat orders for each power
-    for (int p = 0; p < MAX_POWERS; p++) {
-        Power* power = &game->powers[p];
-
-        if (power->num_retreats == 0) {
-            continue;  // No dislodged units
-        }
-
-        // If no orders given, disband all retreating units
-        if (power->num_orders == 0) {
-            for (int r = 0; r < power->num_retreats; r++) {
-                // Auto-disband
-                retreat_destinations[num_retreat_orders] = -1;
-                retreat_power[num_retreat_orders] = p;
-                num_retreat_orders++;
-            }
-            continue;
-        }
-
-        // Parse retreat orders
-        for (int r = 0; r < power->num_retreats; r++) {
-            DislodgedUnit* dislodged = &power->retreats[r];
-            int found_order = 0;
-
-            // Find matching retreat order
-            for (int o = 0; o < power->num_orders; o++) {
-                Order* order = &power->orders[o];
-
-                if (order->type == ORDER_RETREAT &&
-                    order->unit_location == dislodged->from_location) {
-                    // Found retreat order for this unit
-
-                    // Check if destination is valid
-                    int valid_dest = 0;
-                    for (int d = 0; d < dislodged->num_possible_retreats; d++) {
-                        if (dislodged->possible_retreats[d].location == order->target_location) {
-                            valid_dest = 1;
-                            break;
-                        }
-                    }
-
-                    // Check if destination is occupied by another unit
-                    int occupied = 0;
-                    if (valid_dest) {
-                        for (int check_p = 0; check_p < MAX_POWERS; check_p++) {
-                            Power* check_power = &game->powers[check_p];
-                            for (int u = 0; u < check_power->num_units; u++) {
-                                if (check_power->units[u].location == order->target_location) {
-                                    occupied = 1;
-                                    break;
-                                }
-                            }
-                            if (occupied) break;
-                        }
-                    }
-
-                    if (valid_dest && !occupied) {
-                        retreat_destinations[num_retreat_orders] = order->target_location;
-                        retreat_power[num_retreat_orders] = p;
-                        order->result = RESULT_SUCCESS;  // Tentative success (may change if conflict)
-                        num_retreat_orders++;
-                    } else {
-                        // Invalid destination or occupied - disband
-                        retreat_destinations[num_retreat_orders] = -1;
-                        retreat_power[num_retreat_orders] = p;
-                        order->result = RESULT_VOID;  // Invalid retreat
-                        num_retreat_orders++;
-                    }
-                    found_order = 1;
-                    break;
-                }
-
-                if (order->type == ORDER_DISBAND &&
-                    order->unit_location == dislodged->from_location) {
-                    // Explicit disband order
-                    retreat_destinations[num_retreat_orders] = -1;
-                    retreat_power[num_retreat_orders] = p;
-                    order->result = RESULT_DISBAND;  // Disband succeeded
-                    num_retreat_orders++;
-                    found_order = 1;
-                    break;
-                }
-            }
-
-            if (!found_order) {
-                // No order for this unit - auto-disband
-                retreat_destinations[num_retreat_orders] = -1;
-                retreat_power[num_retreat_orders] = p;
-                // No order to set result for (implicit disband)
-                num_retreat_orders++;
-            }
-        }
-    }
-
-    // Check for conflicts: multiple units retreating to same location
-    // Use a conflict marker array to avoid corrupting destinations during detection
-    int has_conflict[MAX_UNITS] = {0};
-    for (int i = 0; i < num_retreat_orders; i++) {
-        if (retreat_destinations[i] == -1) {
-            continue;  // Already disbanding
-        }
-
-        for (int j = i + 1; j < num_retreat_orders; j++) {
-            if (retreat_destinations[j] == -1) {
-                continue;  // Already disbanding
-            }
-
-            if (retreat_destinations[i] == retreat_destinations[j]) {
-                // Conflict! Mark both units to disband
-                has_conflict[i] = 1;
-                has_conflict[j] = 1;
-            }
-        }
-    }
-
-    // Apply conflicts: set all conflicting retreats to disband
-    // And update results to BOUNCE
-    int order_idx = 0;
-    for (int p = 0; p < MAX_POWERS; p++) {
-        Power* power = &game->powers[p];
-        for (int o = 0; o < power->num_orders; o++) {
-            Order* order = &power->orders[o];
-            if (order->type == ORDER_RETREAT || order->type == ORDER_DISBAND) {
-                if (order_idx < num_retreat_orders && has_conflict[order_idx]) {
-                    retreat_destinations[order_idx] = -1;
-                    if (order->type == ORDER_RETREAT) {
-                        order->result = RESULT_BOUNCE;  // Conflicted retreat
-                    }
-                }
-                order_idx++;
-            }
-        }
-    }
-
-    // Apply retreats
-    int retreat_idx = 0;
-    for (int p = 0; p < MAX_POWERS; p++) {
-        Power* power = &game->powers[p];
-
-        for (int r = 0; r < power->num_retreats; r++) {
-            DislodgedUnit* dislodged = &power->retreats[r];
-
-            if (retreat_idx < num_retreat_orders && retreat_destinations[retreat_idx] != -1) {
-                // Unit successfully retreats
-                Unit new_unit;
-                new_unit.type = dislodged->type;
-                new_unit.location = retreat_destinations[retreat_idx];
-                new_unit.power_id = p;
-                new_unit.can_retreat = 0;
-
-                // Add unit to power's unit list
-                power->units[power->num_units++] = new_unit;
-            }
-            // else: unit disbands (do nothing, already removed)
-
-            retreat_idx++;
-        }
-
-        // Clear retreat list
-        power->num_retreats = 0;
-    }
-
-    // Clear dislodged units
-    game->num_dislodged = 0;
-
-    // Save results to persistent storage
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
         game->last_num_orders[p] = power->num_orders;
@@ -4102,8 +3900,181 @@ void resolve_retreat_phase(GameState* game) {
     }
 }
 
+// Check if a location is occupied by one of a power's units
+static int is_location_occupied_by_power(Power* power, int location) {
+    for (int u = 0; u < power->num_units; u++) {
+        if (power->units[u].location == location) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Validate and execute a build order, returns new diff value
+static int process_build_order(GameState* game, Power* power, Order* order, int p, int diff) {
+    if (diff >= 0) {
+        order->result = RESULT_VOID;
+        return diff;
+    }
+
+    Location* loc = &game->map->locations[order->unit_location];
+    int is_valid_build = 0;
+
+    if (loc->has_supply_center && loc->owner_power == p) {
+        int location_empty = !is_location_occupied_by_power(power, order->unit_location);
+
+        if (location_empty && loc->is_home_center == p) {
+            if (order->unit_type == UNIT_FLEET) {
+                is_valid_build = (loc->type != LOC_LAND && loc->type != LOC_PORT);
+            } else {
+                is_valid_build = 1;
+            }
+        }
+    }
+
+    if (is_valid_build && power->num_units < MAX_UNITS) {
+        Unit new_unit;
+        new_unit.type = order->unit_type;
+        new_unit.location = order->unit_location;
+        new_unit.power_id = p;
+        new_unit.can_retreat = 0;
+
+        power->units[power->num_units++] = new_unit;
+        order->result = RESULT_SUCCESS;
+        return diff + 1;
+    }
+
+    order->result = RESULT_VOID;
+    return diff;
+}
+
+// Find and remove a unit at the given location, returns 1 if found
+static int remove_unit_at_location(Power* power, int location) {
+    for (int u = 0; u < power->num_units; u++) {
+        if (power->units[u].location == location) {
+            for (int i = u; i < power->num_units - 1; i++) {
+                power->units[i] = power->units[i + 1];
+            }
+            power->num_units--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Process a disband order, returns new diff value
+static int process_disband_order(GameState* game, Power* power, Order* order, int diff) {
+    if (diff > 0 || game->welfare_mode) {
+        int unit_found = remove_unit_at_location(power, order->unit_location);
+        order->result = unit_found ? RESULT_SUCCESS : RESULT_VOID;
+        return unit_found ? diff - 1 : diff;
+    }
+    order->result = RESULT_VOID;
+    return diff;
+}
+
+// Calculate distance from unit to nearest home center using BFS
+// DATC 6.J: Armies can cross sea spaces (convoy distance)
+static int calculate_distance_to_home(GameState* game, Unit* unit, int power_id) {
+    Map* map = game->map;
+    int unit_loc = unit->location;
+
+    int queue[MAX_LOCATIONS];
+    int distances[MAX_LOCATIONS];
+    for (int i = 0; i < MAX_LOCATIONS; i++) distances[i] = -1;
+    int queue_start = 0, queue_end = 0;
+
+    queue[queue_end++] = unit_loc;
+    distances[unit_loc] = 0;
+
+    int parent_loc = get_parent_location(map, unit_loc);
+    if (parent_loc != unit_loc && distances[parent_loc] < 0) {
+        queue[queue_end++] = parent_loc;
+        distances[parent_loc] = 0;
+    }
+
+    while (queue_start < queue_end) {
+        int curr = queue[queue_start++];
+        int curr_dist = distances[curr];
+
+        int curr_parent = get_parent_location(map, curr);
+        for (int h = 0; h < map->num_homes[power_id]; h++) {
+            int home = map->home_centers[power_id][h];
+            int home_parent = get_parent_location(map, home);
+            if (curr_parent == home_parent) {
+                return curr_dist;
+            }
+        }
+
+        Location* loc = &map->locations[curr];
+        for (int a = 0; a < loc->num_adjacent; a++) {
+            int adj = loc->adjacencies[a];
+            if (adj < 0 || distances[adj] >= 0) continue;
+
+            int can_go = (unit->type == UNIT_FLEET) ?
+                can_move(map, unit->type, curr, adj) : 1;
+
+            if (can_go) {
+                distances[adj] = curr_dist + 1;
+                queue[queue_end++] = adj;
+            }
+        }
+    }
+    return 999;
+}
+
+// Find unit to remove during civil disorder per DATC 6.J rules
+// Priority: furthest from home, then fleets before armies, then alphabetical
+static int find_unit_for_civil_disorder(GameState* game, Power* power, int power_id) {
+    Map* map = game->map;
+    int unit_to_remove = -1;
+    int max_distance = -1;
+    int is_fleet = 0;
+    const char* unit_name = "";
+
+    for (int u = 0; u < power->num_units; u++) {
+        Unit* unit = &power->units[u];
+        int distance = calculate_distance_to_home(game, unit, power_id);
+
+        const char* this_name = map->locations[unit->location].name;
+        int this_is_fleet = (unit->type == UNIT_FLEET) ? 1 : 0;
+
+        int is_worse = 0;
+        if (distance > max_distance) {
+            is_worse = 1;
+        } else if (distance == max_distance) {
+            if (this_is_fleet > is_fleet) {
+                is_worse = 1;
+            } else if (this_is_fleet == is_fleet && strcmp(this_name, unit_name) < 0) {
+                is_worse = 1;
+            }
+        }
+
+        if (is_worse) {
+            unit_to_remove = u;
+            max_distance = distance;
+            is_fleet = this_is_fleet;
+            unit_name = this_name;
+        }
+    }
+    return unit_to_remove;
+}
+
+// Apply civil disorder: auto-disband units when over supply limit
+static void apply_civil_disorder(GameState* game, Power* power, int power_id, int* diff) {
+    while (*diff > 0 && power->num_units > 0) {
+        int unit_to_remove = find_unit_for_civil_disorder(game, power, power_id);
+        if (unit_to_remove < 0) break;
+
+        for (int i = unit_to_remove; i < power->num_units - 1; i++) {
+            power->units[i] = power->units[i + 1];
+        }
+        power->num_units--;
+        (*diff)--;
+    }
+}
+
 void resolve_adjustment_phase(GameState* game) {
-    // Initialize all order results to NONE
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
         for (int o = 0; o < power->num_orders; o++) {
@@ -4111,221 +4082,23 @@ void resolve_adjustment_phase(GameState* game) {
         }
     }
 
-    // Process build and disband orders for each power
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
         int diff = power->num_units - power->num_centers;
 
-        // Process each order
         for (int o = 0; o < power->num_orders; o++) {
             Order* order = &power->orders[o];
-
-            // Process BUILD orders
             if (order->type == ORDER_BUILD) {
-                // Check if we can still build more units
-                if (diff < 0) {
-                    // Validate build location
-                    int is_valid_build = 0;
-
-                    // Check if location is a supply center owned by this power
-                    Location* loc = &game->map->locations[order->unit_location];
-                    if (loc->has_supply_center && loc->owner_power == p) {
-                        // Check if location is empty
-                        int location_empty = 1;
-                        for (int u = 0; u < power->num_units; u++) {
-                            if (power->units[u].location == order->unit_location) {
-                                location_empty = 0;
-                                break;
-                            }
-                        }
-
-                        // Check if it's a home center (standard Diplomacy rule)
-                        if (location_empty && loc->is_home_center == p) {
-                            // Validate unit type for location type
-                            if (order->unit_type == UNIT_FLEET) {
-                                // Fleet can only be built on coastal/water locations
-                                // LOC_LAND: INVALID (can't build fleet on land)
-                                // LOC_PORT: INVALID (need coast specification like STP/NC)
-                                // LOC_COAST/LOC_WATER: VALID
-                                if (loc->type == LOC_LAND || loc->type == LOC_PORT) {
-                                    is_valid_build = 0;
-                                } else {
-                                    is_valid_build = 1;
-                                }
-                            } else {
-                                // Army can be built on land or coastal locations
-                                is_valid_build = 1;
-                            }
-                        }
-                    }
-
-                    // Execute build if valid
-                    if (is_valid_build && power->num_units < MAX_UNITS) {
-                        Unit new_unit;
-                        new_unit.type = order->unit_type;
-                        new_unit.location = order->unit_location;
-                        new_unit.power_id = p;
-                        new_unit.can_retreat = 0;
-
-                        power->units[power->num_units++] = new_unit;
-                        diff++;
-                        order->result = RESULT_SUCCESS;
-                    } else {
-                        order->result = RESULT_VOID;  // Invalid build
-                    }
-                } else {
-                    // Build limit reached - mark as VOID
-                    order->result = RESULT_VOID;
-                }
-            }
-            // Process DISBAND orders
-            else if (order->type == ORDER_DISBAND) {
-                // In standard mode: only allow if more units than centers
-                // In welfare mode: always allow voluntary disbands
-                if (diff > 0 || game->welfare_mode) {
-                    // Find and remove the unit
-                    int unit_found = 0;
-                    for (int u = 0; u < power->num_units; u++) {
-                        if (power->units[u].location == order->unit_location) {
-                            // Remove unit by shifting array
-                            for (int i = u; i < power->num_units - 1; i++) {
-                                power->units[i] = power->units[i + 1];
-                            }
-                            power->num_units--;
-                            diff--;
-                            unit_found = 1;
-                            break;
-                        }
-                    }
-                    order->result = unit_found ? RESULT_SUCCESS : RESULT_VOID;
-                } else {
-                    order->result = RESULT_VOID;  // Not allowed to disband
-                }
+                diff = process_build_order(game, power, order, p, diff);
+            } else if (order->type == ORDER_DISBAND) {
+                diff = process_disband_order(game, power, order, diff);
             }
         }
 
-        // Civil disorder: auto-disband if still over supply limit
-        // DATC 6.J: Remove units in order of:
-        // 1. Distance from home centers (furthest first)
-        // 2. Fleets before armies at same distance
-        // 3. Alphabetical by location name as tiebreaker
-        while (diff > 0 && power->num_units > 0) {
-            int unit_to_remove = -1;
-            int max_distance = -1;
-            int is_fleet = 0;
-            const char* unit_name = "";
-
-            for (int u = 0; u < power->num_units; u++) {
-                Unit* unit = &power->units[u];
-                int unit_loc = unit->location;
-
-                // Calculate distance to nearest home center
-                // Use BFS respecting unit type movement restrictions
-                int min_distance = 999;
-
-                // BFS setup
-                int queue[MAX_LOCATIONS];
-                int distances[MAX_LOCATIONS];
-                for (int i = 0; i < MAX_LOCATIONS; i++) distances[i] = -1;
-                int queue_start = 0, queue_end = 0;
-
-                // Start from unit location
-                queue[queue_end++] = unit_loc;
-                distances[unit_loc] = 0;
-
-                // Also start from parent location for split coasts
-                int parent_loc = get_parent_location(game->map, unit_loc);
-                if (parent_loc != unit_loc && distances[parent_loc] < 0) {
-                    queue[queue_end++] = parent_loc;
-                    distances[parent_loc] = 0;
-                }
-
-                // BFS
-                while (queue_start < queue_end && min_distance == 999) {
-                    int curr = queue[queue_start++];
-                    int curr_dist = distances[curr];
-
-                    // Check if this is a home center
-                    int curr_parent = get_parent_location(game->map, curr);
-                    for (int h = 0; h < game->map->num_homes[p]; h++) {
-                        int home = game->map->home_centers[p][h];
-                        int home_parent = get_parent_location(game->map, home);
-                        if (curr_parent == home_parent) {
-                            min_distance = curr_dist;
-                            break;
-                        }
-                    }
-
-                    if (min_distance < 999) break;
-
-                    // Expand to adjacent locations
-                    Location* loc = &game->map->locations[curr];
-                    for (int a = 0; a < loc->num_adjacent; a++) {
-                        int adj = loc->adjacencies[a];
-                        if (adj < 0 || distances[adj] >= 0) continue;
-
-                        // For fleets: use can_move (only water/coast)
-                        // For armies: allow all adjacencies including sea (convoy distance)
-                        // DATC 4.D.8 / 6.J.10-11: armies can cross sea for distance calc
-                        int can_go = 0;
-                        if (unit->type == UNIT_FLEET) {
-                            can_go = can_move(game->map, unit->type, curr, adj);
-                        } else {
-                            // Army: allow land, coast, and water (convoy)
-                            can_go = 1;
-                        }
-
-                        if (can_go) {
-                            distances[adj] = curr_dist + 1;
-                            queue[queue_end++] = adj;
-                        }
-                    }
-                }
-
-                // Compare with current max
-                const char* this_name = game->map->locations[unit_loc].name;
-                int this_is_fleet = (unit->type == UNIT_FLEET) ? 1 : 0;
-
-                int is_worse = 0;  // Whether this unit should be removed before current best
-                if (min_distance > max_distance) {
-                    is_worse = 1;
-                } else if (min_distance == max_distance) {
-                    // Tie on distance - fleet takes precedence over army
-                    if (this_is_fleet > is_fleet) {
-                        is_worse = 1;
-                    } else if (this_is_fleet == is_fleet) {
-                        // Same type - alphabetical order
-                        if (strcmp(this_name, unit_name) < 0) {
-                            is_worse = 1;
-                        }
-                    }
-                }
-
-                if (is_worse) {
-                    unit_to_remove = u;
-                    max_distance = min_distance;
-                    is_fleet = this_is_fleet;
-                    unit_name = this_name;
-                }
-            }
-
-            // Remove the selected unit
-            if (unit_to_remove >= 0) {
-                for (int i = unit_to_remove; i < power->num_units - 1; i++) {
-                    power->units[i] = power->units[i + 1];
-                }
-                power->num_units--;
-                diff--;
-            } else {
-                break;  // Safety: no unit found
-            }
-        }
-
-        // Update adjustment count
+        apply_civil_disorder(game, power, p, &diff);
         power->adjustment = power->num_centers - power->num_units;
     }
 
-    // Save results to persistent storage BEFORE clearing orders
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
         game->last_num_orders[p] = power->num_orders;
@@ -4335,12 +4108,10 @@ void resolve_adjustment_phase(GameState* game) {
         }
     }
 
-    // Clear orders after saving results
     for (int p = 0; p < MAX_POWERS; p++) {
         game->powers[p].num_orders = 0;
     }
 
-    // Welfare Diplomacy: Calculate welfare points after adjustments
     if (game->welfare_mode) {
         for (int p = 0; p < MAX_POWERS; p++) {
             Power* power = &game->powers[p];
@@ -4405,6 +4176,65 @@ void advance_phase(GameState* game) {
 // PufferLib Integration Functions
 // ============================================================================
 
+static void encode_observations(Env* env) {
+    if (!env->observations || !env->game) {
+        return;
+    }
+
+    float* obs = (float*)env->observations;
+    int stride = 175;
+
+    for (int agent = 0; agent < MAX_POWERS; agent++) {
+        float* base = obs + agent * stride;
+
+        // Board ownership (75 locations)
+        for (int i = 0; i < env->game->map->num_locations; i++) {
+            base[i] = (float)env->game->map->locations[i].owner_power;
+        }
+
+        // Unit type at each location (0=none, 1=army, 2=fleet)
+        int offset = 75;
+        for (int i = 0; i < env->game->map->num_locations; i++) {
+            int owner = get_unit_at_location(env->game, i);
+            if (owner >= 0) {
+                UnitType t = UNIT_NONE;
+                for (int u = 0; u < env->game->powers[owner].num_units; u++) {
+                    if (env->game->powers[owner].units[u].location == i) {
+                        t = env->game->powers[owner].units[u].type;
+                        break;
+                    }
+                }
+                base[offset + i] = (float)t;
+            } else {
+                base[offset + i] = 0.0f;
+            }
+        }
+
+        // Centers per power (7 powers)
+        offset += 75;
+        for (int p = 0; p < MAX_POWERS; p++) {
+            base[offset + p] = (float)env->game->powers[p].num_centers;
+        }
+
+        // Units per power (7 powers)
+        offset += 7;
+        for (int p = 0; p < MAX_POWERS; p++) {
+            base[offset + p] = (float)env->game->powers[p].num_units;
+        }
+
+        // Welfare per power (7 powers)
+        offset += 7;
+        for (int p = 0; p < MAX_POWERS; p++) {
+            base[offset + p] = (float)env->game->powers[p].welfare_points;
+        }
+
+        // Phase and year (2 values)
+        offset += 7;
+        base[offset + 0] = (float)env->game->phase;
+        base[offset + 1] = (float)env->game->year;
+    }
+}
+
 void c_init(Env* env) {
     // Allocate and initialize game state
     env->game = (GameState*)calloc(1, sizeof(GameState));
@@ -4447,54 +4277,7 @@ void c_reset(Env* env) {
     // Initialize last welfare snapshot
     for (int i = 0; i < MAX_POWERS; i++) env->last_welfare[i] = env->game->powers[i].welfare_points;
 
-    // Encode observations once on reset
-    if (env->observations) {
-        float* obs = (float*)env->observations;
-        int stride = 175;
-        for (int agent = 0; agent < MAX_POWERS; agent++) {
-            float* base = obs + agent * stride;
-            // Board ownership
-            for (int i = 0; i < env->game->map->num_locations; i++) {
-                base[i] = (float)env->game->map->locations[i].owner_power;
-            }
-            // Unit type at each location (0 none, 1 army, 2 fleet)
-            int offset = 75;
-            for (int i = 0; i < env->game->map->num_locations; i++) {
-                int owner = get_unit_at_location(env->game, i);
-                if (owner >= 0) {
-                    UnitType t = UNIT_NONE;
-                    for (int u = 0; u < env->game->powers[owner].num_units; u++) {
-                        if (env->game->powers[owner].units[u].location == i) {
-                            t = env->game->powers[owner].units[u].type;
-                            break;
-                        }
-                    }
-                    base[offset + i] = (float)t;
-                } else {
-                    base[offset + i] = 0.0f;
-                }
-            }
-            // Centers per power
-            offset += 75;
-            for (int p = 0; p < MAX_POWERS; p++) {
-                base[offset + p] = (float)env->game->powers[p].num_centers;
-            }
-            // Units per power
-            offset += 7;
-            for (int p = 0; p < MAX_POWERS; p++) {
-                base[offset + p] = (float)env->game->powers[p].num_units;
-            }
-            // Welfare per power
-            offset += 7;
-            for (int p = 0; p < MAX_POWERS; p++) {
-                base[offset + p] = (float)env->game->powers[p].welfare_points;
-            }
-            // Phase and year
-            offset += 7;
-            base[offset + 0] = (float)env->game->phase;
-            base[offset + 1] = (float)env->game->year;
-        }
-    }
+    encode_observations(env);
 }
 
 void c_step(Env* env) {
@@ -4524,48 +4307,7 @@ void c_step(Env* env) {
     // Advance to next phase
     advance_phase(game);
 
-    // Update observations
-    if (env->observations) {
-        float* obs = (float*)env->observations;
-        int stride = 175;
-        for (int agent = 0; agent < MAX_POWERS; agent++) {
-            float* base = obs + agent * stride;
-            for (int i = 0; i < env->game->map->num_locations; i++) {
-                base[i] = (float)env->game->map->locations[i].owner_power;
-            }
-            int offset = 75;
-            for (int i = 0; i < env->game->map->num_locations; i++) {
-                int owner = get_unit_at_location(env->game, i);
-                if (owner >= 0) {
-                    UnitType t = UNIT_NONE;
-                    for (int u = 0; u < env->game->powers[owner].num_units; u++) {
-                        if (env->game->powers[owner].units[u].location == i) {
-                            t = env->game->powers[owner].units[u].type;
-                            break;
-                        }
-                    }
-                    base[offset + i] = (float)t;
-                } else {
-                    base[offset + i] = 0.0f;
-                }
-            }
-            offset += 75;
-            for (int p = 0; p < MAX_POWERS; p++) {
-                base[offset + p] = (float)env->game->powers[p].num_centers;
-            }
-            offset += 7;
-            for (int p = 0; p < MAX_POWERS; p++) {
-                base[offset + p] = (float)env->game->powers[p].num_units;
-            }
-            offset += 7;
-            for (int p = 0; p < MAX_POWERS; p++) {
-                base[offset + p] = (float)env->game->powers[p].welfare_points;
-            }
-            offset += 7;
-            base[offset + 0] = (float)env->game->phase;
-            base[offset + 1] = (float)env->game->year;
-        }
-    }
+    encode_observations(env);
 
     // Calculate rewards at end of adjustment phase based on welfare deltas
     if (game->phase == PHASE_WINTER_ADJUSTMENT) {

@@ -14,18 +14,20 @@ import numpy as np
 from cffi import FFI
 
 try:
-    from raylib import rl, colors
-    import pyray
+    from raylib import rl, colors, ffi
     RAYLIB_AVAILABLE = True
 except ImportError:
     RAYLIB_AVAILABLE = False
+    ffi = None
 
 from .map_data import (
-    MAP_WIDTH, MAP_HEIGHT, UNIT_RADIUS, ARROW_HEAD_SIZE, LINE_WIDTH,
+    MAP_WIDTH, MAP_HEIGHT, UNIT_RADIUS, FLEET_SIZE, ARROW_HEAD_SIZE, LINE_WIDTH,
+    LABEL_FONT_SIZE, SC_SIZE,
     PROVINCE_COORDS, DISLODGED_COORDS, POWER_COLORS, POWER_NAMES,
-    PHASE_NAMES, SUPPLY_CENTERS, LOC_INDEX_TO_NAME,
+    PHASE_NAMES, SUPPLY_CENTERS, LOC_INDEX_TO_NAME, LABEL_COORDS,
     get_coords, get_coords_by_index, get_power_color, get_location_name,
 )
+from .province_polygons import PROVINCE_POLYGONS
 
 # Background colors
 PUFF_BACKGROUND = [6, 24, 24, 255]
@@ -34,6 +36,7 @@ PUFF_TEXT = [0, 187, 187, 255]
 # Sea color for background
 SEA_COLOR = (64, 128, 192, 255)
 LAND_COLOR = (200, 180, 160, 255)
+
 
 
 def cdata_to_numpy():
@@ -87,12 +90,13 @@ class DiplomacyRenderer:
         rl.InitWindow(screen_width, screen_height, b"Welfare Diplomacy")
         rl.SetTargetFPS(fps)
 
-        # Camera for pan/zoom
-        self.camera = pyray.Camera2D()
-        self.camera.target = pyray.Vector2(MAP_WIDTH / 2, MAP_HEIGHT / 2)
-        self.camera.offset = pyray.Vector2(screen_width / 2, screen_height / 2)
+        # Camera for pan/zoom (using ffi to create structs)
+        self.camera = ffi.new('Camera2D *')
+        self.camera.target = ffi.new('Vector2 *', [MAP_WIDTH / 2, MAP_HEIGHT / 2])[0]
+        self.camera.offset = ffi.new('Vector2 *', [screen_width / 2, screen_height / 2])[0]
         self.camera.rotation = 0.0
-        self.camera.zoom = min(screen_width / MAP_WIDTH, screen_height / MAP_HEIGHT) * 0.9
+        # Start with a zoom that fits the map nicely
+        self.camera.zoom = min(screen_width / MAP_WIDTH, screen_height / MAP_HEIGHT)
 
         # UI state
         self.paused = False
@@ -101,19 +105,50 @@ class DiplomacyRenderer:
         self.show_labels = True
         self.speed = min(screen_width, screen_height) / 100
 
-        # Load map texture if available
+        # Load textures
         self.map_texture = None
-        self._try_load_map_texture()
+        self.army_texture = None
+        self.fleet_texture = None
+        self._load_textures()
 
-    def _try_load_map_texture(self):
-        """Try to load the background map texture."""
+    def _load_textures(self):
+        """Load all textures (map, unit symbols)."""
         import os
-        # Look for map in assets folder
         render_dir = os.path.dirname(os.path.abspath(__file__))
-        map_path = os.path.join(render_dir, "assets", "map_bg.png")
 
+        # Map background
+        map_path = os.path.join(render_dir, "assets", "map_bg.png")
         if os.path.exists(map_path):
             self.map_texture = rl.LoadTexture(map_path.encode())
+            # Use point filtering for crisp pixels (no blur)
+            rl.SetTextureFilter(self.map_texture, rl.TEXTURE_FILTER_POINT)
+
+        # Unit symbols
+        army_path = os.path.join(render_dir, "assets", "army.png")
+        if os.path.exists(army_path):
+            self.army_texture = rl.LoadTexture(army_path.encode())
+            rl.SetTextureFilter(self.army_texture, rl.TEXTURE_FILTER_POINT)
+
+        fleet_path = os.path.join(render_dir, "assets", "fleet.png")
+        if os.path.exists(fleet_path):
+            self.fleet_texture = rl.LoadTexture(fleet_path.encode())
+            rl.SetTextureFilter(self.fleet_texture, rl.TEXTURE_FILTER_POINT)
+
+        # Load a proper font for crisp text
+        self.font = None
+        font_paths = [
+            os.path.join(render_dir, "assets", "font.ttf"),
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                self.font = rl.LoadFontEx(font_path.encode(), 48, ffi.NULL, 0)
+                if self.font.glyphCount > 0:
+                    rl.SetTextureFilter(self.font.texture, rl.TEXTURE_FILTER_BILINEAR)
+                    break
+                else:
+                    self.font = None
 
     def should_close(self):
         """Check if window should close."""
@@ -123,6 +158,12 @@ class DiplomacyRenderer:
         """Close the renderer and cleanup."""
         if self.map_texture:
             rl.UnloadTexture(self.map_texture)
+        if self.army_texture:
+            rl.UnloadTexture(self.army_texture)
+        if self.fleet_texture:
+            rl.UnloadTexture(self.fleet_texture)
+        if self.font:
+            rl.UnloadFont(self.font)
         rl.CloseWindow()
 
     def _handle_input(self):
@@ -211,14 +252,17 @@ class DiplomacyRenderer:
         # Begin drawing
         rl.BeginDrawing()
         rl.ClearBackground(SEA_COLOR)
-        rl.BeginMode2D(self.camera)
+        rl.BeginMode2D(self.camera[0])  # Dereference the camera pointer
 
-        # Draw background map if available
+        # Draw background map texture
         if self.map_texture:
             rl.DrawTexture(self.map_texture, 0, 0, colors.WHITE)
         else:
-            # Draw simplified background (just a rectangle)
+            # Fallback: draw sea color
             rl.DrawRectangle(0, 0, MAP_WIDTH, MAP_HEIGHT, SEA_COLOR)
+
+        # Draw province influence (colored overlays for owned territories)
+        self._draw_province_influence(game_state)
 
         # Draw supply center markers
         self._draw_supply_centers(game_state)
@@ -247,6 +291,107 @@ class DiplomacyRenderer:
 
         return cdata_to_numpy()
 
+    def render_to_image(self, scale=1.0):
+        """
+        Render high-quality image without camera transformation.
+
+        Args:
+            scale: Scale factor (1.0 = map resolution, 2.0 = 2x resolution)
+
+        Returns:
+            numpy array of RGBA pixels at full quality
+        """
+        width = int(MAP_WIDTH * scale)
+        height = int(MAP_HEIGHT * scale)
+
+        # Create a RenderTexture for off-screen rendering
+        target = rl.LoadRenderTexture(width, height)
+        rl.SetTextureFilter(target.texture, rl.TEXTURE_FILTER_POINT)
+
+        # Query game state
+        game_state = self.binding.query_game_state(self.env_handle)
+
+        # Render to texture
+        rl.BeginTextureMode(target)
+        rl.ClearBackground(SEA_COLOR)
+
+        # Apply scale if needed
+        if scale != 1.0:
+            # Scale all drawing
+            for i in range(int(scale)):
+                pass  # Raylib doesn't have easy global scale, we'll handle below
+
+        # Draw background map texture (scaled if needed)
+        if self.map_texture:
+            if scale == 1.0:
+                rl.DrawTexture(self.map_texture, 0, 0, colors.WHITE)
+            else:
+                # Draw scaled
+                src = ffi.new('Rectangle *', [0, 0, self.map_texture.width, self.map_texture.height])[0]
+                dst = ffi.new('Rectangle *', [0, 0, width, height])[0]
+                origin = ffi.new('Vector2 *', [0, 0])[0]
+                rl.DrawTexturePro(self.map_texture, src, dst, origin, 0, colors.WHITE)
+        else:
+            rl.DrawRectangle(0, 0, width, height, SEA_COLOR)
+
+        # For 1:1 rendering, draw everything directly
+        if scale == 1.0:
+            self._draw_province_influence(game_state)
+            self._draw_supply_centers(game_state)
+            if self.show_labels:
+                self._draw_labels()
+            self._draw_units(game_state)
+        else:
+            # For scaled rendering, we need to scale coordinates
+            # This is more complex - for now just use 1:1
+            self._draw_province_influence(game_state)
+            self._draw_supply_centers(game_state)
+            if self.show_labels:
+                self._draw_labels(font_size=int(LABEL_FONT_SIZE * scale))
+            self._draw_units(game_state)
+
+        rl.EndTextureMode()
+
+        # Convert RenderTexture to numpy array
+        image = rl.LoadImageFromTexture(target.texture)
+        # Flip vertically (RenderTexture is upside down)
+        rl.ImageFlipVertical(ffi.addressof(image))
+
+        data_pointer = image.data
+        channels = 4
+        data_size = width * height * channels
+        cdata = FFI().buffer(data_pointer, data_size)
+        arr = np.frombuffer(cdata, dtype=np.uint8).reshape((height, width, channels)).copy()
+
+        rl.UnloadImage(image)
+        rl.UnloadRenderTexture(target)
+
+        return arr
+
+    def _draw_province_influence(self, game_state):
+        """Draw colored overlays for provinces owned by each power."""
+        # Build ownership map from supply centers
+        ownership = {}
+        for power_id, power_data in enumerate(game_state['powers']):
+            for center_idx in power_data['centers']:
+                center_name = get_location_name(center_idx)
+                ownership[center_name] = power_id
+
+        # Draw filled polygons for owned provinces
+        for province_name, polygons in PROVINCE_POLYGONS.items():
+            power_id = ownership.get(province_name, -1)
+            if power_id >= 0:
+                # Get power color - darker and more solid
+                base_color = get_power_color(power_id)
+                overlay_color = (base_color[0], base_color[1], base_color[2], 230)
+
+                # Draw each polygon for this province
+                for polygon in polygons:
+                    if len(polygon) >= 3:
+                        self._draw_filled_polygon(polygon, overlay_color)
+                        # Draw black border
+                        self._draw_polygon_outline(polygon, (0, 0, 0, 255), 2)
+
     def _draw_supply_centers(self, game_state):
         """Draw supply center ownership markers."""
         # Build ownership map from game state
@@ -265,25 +410,29 @@ class DiplomacyRenderer:
             power_id = ownership.get(sc_name, -1)
             color = get_power_color(power_id)
 
-            # Draw supply center as small square
-            size = 8
-            rl.DrawRectangle(
-                int(x - size / 2), int(y - size / 2 - 20),
-                size, size, color
-            )
-            rl.DrawRectangleLines(
-                int(x - size / 2), int(y - size / 2 - 20),
-                size, size, (0, 0, 0, 255)
-            )
+            # Draw supply center as small dot above province
+            rl.DrawCircle(int(x), int(y - 25), SC_SIZE // 2, color)
+            rl.DrawCircleLines(int(x), int(y - 25), SC_SIZE // 2, (0, 0, 0, 255))
 
-    def _draw_labels(self):
-        """Draw province name labels."""
-        for name, (x, y) in PROVINCE_COORDS.items():
-            if "/" in name:  # Skip coast variants for labels
+    def _draw_labels(self, font_size=None):
+        """Draw province name labels using optimized label coordinates."""
+        if font_size is None:
+            font_size = LABEL_FONT_SIZE
+
+        for name, (x, y) in LABEL_COORDS.items():
+            if x == 0 and y == 0:
                 continue
-            # Draw small label below unit position
             label = name[:3]
-            rl.DrawText(label.encode(), int(x - 10), int(y + 18), 10, (100, 100, 100, 200))
+
+            if self.font:
+                # Use custom font for crisp text
+                text_size = rl.MeasureTextEx(self.font, label.encode(), font_size, 1)
+                pos = ffi.new('Vector2 *', [x - text_size.x / 2, y - text_size.y / 2])[0]
+                rl.DrawTextEx(self.font, label.encode(), pos, font_size, 1, (20, 20, 20, 255))
+            else:
+                # Fallback to default font
+                text_width = rl.MeasureText(label.encode(), font_size)
+                rl.DrawText(label.encode(), int(x - text_width / 2), int(y - font_size / 2), font_size, (20, 20, 20, 255))
 
     def _draw_units(self, game_state):
         """Draw all units on the map."""
@@ -303,25 +452,51 @@ class DiplomacyRenderer:
                     self._draw_fleet(x, y, color)
 
     def _draw_army(self, x, y, color):
-        """Draw army symbol (filled circle with border)."""
-        # Shadow
-        rl.DrawCircle(int(x + 2), int(y + 2), UNIT_RADIUS, (0, 0, 0, 100))
-        # Main circle
-        rl.DrawCircle(int(x), int(y), UNIT_RADIUS, color)
-        # Border
-        rl.DrawCircleLines(int(x), int(y), UNIT_RADIUS, (0, 0, 0, 255))
-        # Inner detail (army symbol = circle with center dot)
-        rl.DrawCircle(int(x), int(y), 4, (0, 0, 0, 128))
+        """Draw army symbol (tank icon or fallback circle)."""
+        if self.army_texture:
+            w = self.army_texture.width
+            h = self.army_texture.height
+            # Draw shadow (offset, semi-transparent black)
+            rl.DrawRectangleRounded(
+                ffi.new('Rectangle *', [x - w/2 + 2, y - h/2 + 2, w, h])[0],
+                0.3, 4, (0, 0, 0, 100)
+            )
+            # Draw colored background with rounded corners
+            rl.DrawRectangleRounded(
+                ffi.new('Rectangle *', [x - w/2, y - h/2, w, h])[0],
+                0.3, 4, color
+            )
+            # Draw black icon on top
+            rl.DrawTexture(self.army_texture, int(x - w/2), int(y - h/2), colors.WHITE)
+        else:
+            # Fallback: draw circle
+            rl.DrawCircle(int(x + 2), int(y + 2), UNIT_RADIUS, (0, 0, 0, 100))
+            rl.DrawCircle(int(x), int(y), UNIT_RADIUS, color)
+            rl.DrawCircleLines(int(x), int(y), UNIT_RADIUS, (0, 0, 0, 255))
 
     def _draw_fleet(self, x, y, color):
-        """Draw fleet symbol (diamond/rhombus shape)."""
-        # Shadow
-        size = UNIT_RADIUS
-        self._draw_diamond(x + 2, y + 2, size, (0, 0, 0, 100))
-        # Main shape
-        self._draw_diamond(x, y, size, color)
-        # Border
-        self._draw_diamond_lines(x, y, size, (0, 0, 0, 255))
+        """Draw fleet symbol (ship icon or fallback diamond)."""
+        if self.fleet_texture:
+            w = self.fleet_texture.width
+            h = self.fleet_texture.height
+            # Draw shadow (offset, semi-transparent black)
+            rl.DrawRectangleRounded(
+                ffi.new('Rectangle *', [x - w/2 + 2, y - h/2 + 2, w, h])[0],
+                0.3, 4, (0, 0, 0, 100)
+            )
+            # Draw colored background with rounded corners
+            rl.DrawRectangleRounded(
+                ffi.new('Rectangle *', [x - w/2, y - h/2, w, h])[0],
+                0.3, 4, color
+            )
+            # Draw black icon on top
+            rl.DrawTexture(self.fleet_texture, int(x - w/2), int(y - h/2), colors.WHITE)
+        else:
+            # Fallback: draw diamond
+            size = FLEET_SIZE
+            self._draw_diamond(x + 2, y + 2, size, (0, 0, 0, 100))
+            self._draw_diamond(x, y, size, color)
+            self._draw_diamond_lines(x, y, size, (0, 0, 0, 255))
 
     def _draw_diamond(self, x, y, size, color):
         """Draw filled diamond shape."""
@@ -331,17 +506,19 @@ class DiplomacyRenderer:
             (x, y + size),      # Bottom
             (x - size, y),      # Left
         ]
-        # Draw as two triangles
+        # Draw as two triangles (using ffi for Vector2)
+        def vec2(x, y):
+            return ffi.new('Vector2 *', [x, y])[0]
         rl.DrawTriangle(
-            pyray.Vector2(points[0][0], points[0][1]),
-            pyray.Vector2(points[1][0], points[1][1]),
-            pyray.Vector2(points[2][0], points[2][1]),
+            vec2(points[0][0], points[0][1]),
+            vec2(points[1][0], points[1][1]),
+            vec2(points[2][0], points[2][1]),
             color
         )
         rl.DrawTriangle(
-            pyray.Vector2(points[0][0], points[0][1]),
-            pyray.Vector2(points[2][0], points[2][1]),
-            pyray.Vector2(points[3][0], points[3][1]),
+            vec2(points[0][0], points[0][1]),
+            vec2(points[2][0], points[2][1]),
+            vec2(points[3][0], points[3][1]),
             color
         )
 
@@ -351,6 +528,109 @@ class DiplomacyRenderer:
         rl.DrawLine(int(x + size), int(y), int(x), int(y + size), color)
         rl.DrawLine(int(x), int(y + size), int(x - size), int(y), color)
         rl.DrawLine(int(x - size), int(y), int(x), int(y - size), color)
+
+    def _draw_filled_polygon(self, polygon, color):
+        """Draw a filled polygon using ear-clipping triangulation."""
+        if len(polygon) < 3:
+            return
+
+        def vec2(x, y):
+            return ffi.new('Vector2 *', [float(x), float(y)])[0]
+
+        # Convert to mutable list
+        verts = list(polygon)
+
+        # Ensure counter-clockwise winding
+        def signed_area(pts):
+            area = 0
+            n = len(pts)
+            for i in range(n):
+                j = (i + 1) % n
+                area += pts[i][0] * pts[j][1]
+                area -= pts[j][0] * pts[i][1]
+            return area / 2
+
+        if signed_area(verts) > 0:
+            verts = verts[::-1]
+
+        # Check if point is inside triangle
+        def point_in_triangle(px, py, ax, ay, bx, by, cx, cy):
+            def sign(p1x, p1y, p2x, p2y, p3x, p3y):
+                return (p1x - p3x) * (p2y - p3y) - (p2x - p3x) * (p1y - p3y)
+            d1 = sign(px, py, ax, ay, bx, by)
+            d2 = sign(px, py, bx, by, cx, cy)
+            d3 = sign(px, py, cx, cy, ax, ay)
+            has_neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
+            has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
+            return not (has_neg and has_pos)
+
+        # Check if vertex is an ear
+        def is_ear(i, pts):
+            n = len(pts)
+            prev_i = (i - 1) % n
+            next_i = (i + 1) % n
+            a, b, c = pts[prev_i], pts[i], pts[next_i]
+            # Check if convex (cross product)
+            cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+            if cross >= 0:
+                return False
+            # Check no other vertex inside triangle
+            for j in range(n):
+                if j in (prev_i, i, next_i):
+                    continue
+                if point_in_triangle(pts[j][0], pts[j][1], a[0], a[1], b[0], b[1], c[0], c[1]):
+                    return False
+            return True
+
+        # Ear clipping
+        triangles = []
+        indices = list(range(len(verts)))
+        max_iterations = len(verts) * 3  # Safety limit
+
+        while len(indices) > 3 and max_iterations > 0:
+            max_iterations -= 1
+            found_ear = False
+            for i in range(len(indices)):
+                pts = [verts[j] for j in indices]
+                if is_ear(i, pts):
+                    prev_i = (i - 1) % len(indices)
+                    next_i = (i + 1) % len(indices)
+                    triangles.append((indices[prev_i], indices[i], indices[next_i]))
+                    indices.pop(i)
+                    found_ear = True
+                    break
+            if not found_ear:
+                break
+
+        # Add final triangle
+        if len(indices) == 3:
+            triangles.append((indices[0], indices[1], indices[2]))
+
+        # Draw all triangles
+        for i0, i1, i2 in triangles:
+            rl.DrawTriangle(
+                vec2(verts[i0][0], verts[i0][1]),
+                vec2(verts[i1][0], verts[i1][1]),
+                vec2(verts[i2][0], verts[i2][1]),
+                color
+            )
+
+    def _draw_polygon_outline(self, polygon, color, thickness=1):
+        """Draw polygon outline with given color and thickness."""
+        if len(polygon) < 2:
+            return
+        for i in range(len(polygon)):
+            p1 = polygon[i]
+            p2 = polygon[(i + 1) % len(polygon)]
+            if thickness > 1:
+                rl.DrawLineEx(
+                    ffi.new('Vector2 *', [float(p1[0]), float(p1[1])])[0],
+                    ffi.new('Vector2 *', [float(p2[0]), float(p2[1])])[0],
+                    float(thickness),
+                    color
+                )
+            else:
+                rl.DrawLine(int(p1[0]), int(p1[1]), int(p2[0]), int(p2[1]), color)
 
     def _draw_orders(self, game_state):
         """Draw order visualizations (arrows, support lines, etc.)."""
