@@ -13,6 +13,17 @@
 #define MAX_POWER_NAME_LENGTH 10
 #define MAX_LOCATION_NAME_LENGTH 8  // Expanded from 4 to fit "STP/NC" + null
 
+// Observation encoding constants
+#define OBS_NUM_LOCATIONS 81       // Fixed observation grid (75 provinces + 6 coasts)
+#define OBS_FEATURES_PER_LOC 20    // unit_type(3) + unit_owner(8) + sc_owner(8) + buildable(1)
+#define OBS_GLOBAL_FEATURES 21     // phase(6) + year(1) + build_delta(7) + welfare(7)
+#define OBS_TOTAL_SIZE (OBS_NUM_LOCATIONS * OBS_FEATURES_PER_LOC + OBS_GLOBAL_FEATURES)  // 1641
+
+// Action encoding constants
+#define ACTION_MAX_UNITS 17        // Max units per power for action encoding
+#define ACTION_ORDERS_PER_UNIT 64  // Order types per unit
+#define ACTION_SPACE_SIZE (ACTION_MAX_UNITS * ACTION_ORDERS_PER_UNIT)  // 1088
+
 // Location types
 typedef enum {
     LOC_LAND = 0,

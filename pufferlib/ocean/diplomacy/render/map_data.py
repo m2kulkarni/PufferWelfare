@@ -291,6 +291,17 @@ POWER_COLORS = {
     -1: (128, 128, 128),  # Neutral - gray
 }
 
+POWER_UNIT_COLORS = {
+    0: (190, 85, 70),    # Austria – strong warm red-brown highlight
+    1: (220, 170, 255),  # England – very bright lavender
+    2: (175, 215, 255),  # France – vivid sky blue
+    3: (205, 180, 145),  # Germany – bright warm tan
+    4: (170, 235, 170),  # Italy – high-contrast mint green
+    5: (185, 185, 210),  # Russia – bright cool slate
+    6: (255, 245, 160),  # Turkey – strong pale gold
+    -1: (225, 225, 225), # Neutral – near-white gray
+}
+
 # Power names (indexed by power ID)
 POWER_NAMES = [
     "AUSTRIA",
@@ -399,6 +410,16 @@ def get_power_color(power_id):
     """
     return POWER_COLORS.get(power_id, POWER_COLORS[-1])
 
+def get_power_unit_color(power_id):
+    """Get RGB color tuple for a power's unit.
+
+    Args:
+        power_id: Power index (0-6) or -1 for neutral
+
+    Returns:
+        Tuple (r, g, b)
+    """
+    return POWER_UNIT_COLORS.get(power_id, POWER_UNIT_COLORS[-1])
 
 def get_location_name(loc_index):
     """Get location name from index.

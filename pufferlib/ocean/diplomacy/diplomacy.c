@@ -4182,56 +4182,276 @@ static void encode_observations(Env* env) {
     }
 
     float* obs = (float*)env->observations;
-    int stride = 175;
+    GameState* game = env->game;
+    Map* map = game->map;
+    int stride = OBS_TOTAL_SIZE;  // 1641
 
+    // Pre-compute unit locations for fast lookup
+    // unit_at[loc] = power_id if unit present, -1 otherwise
+    // unit_type_at[loc] = UNIT_ARMY or UNIT_FLEET if present
+    int unit_at[MAX_LOCATIONS];
+    UnitType unit_type_at[MAX_LOCATIONS];
+    for (int i = 0; i < MAX_LOCATIONS; i++) {
+        unit_at[i] = -1;
+        unit_type_at[i] = UNIT_NONE;
+    }
+    for (int p = 0; p < MAX_POWERS; p++) {
+        for (int u = 0; u < game->powers[p].num_units; u++) {
+            int loc = game->powers[p].units[u].location;
+            unit_at[loc] = p;
+            unit_type_at[loc] = game->powers[p].units[u].type;
+        }
+    }
+
+    // Encode observations for each agent (all agents see the same board)
     for (int agent = 0; agent < MAX_POWERS; agent++) {
         float* base = obs + agent * stride;
+        int idx = 0;
 
-        // Board ownership (75 locations)
-        for (int i = 0; i < env->game->map->num_locations; i++) {
-            base[i] = (float)env->game->map->locations[i].owner_power;
-        }
+        // Per-location features: 81 locations × 20 features = 1620
+        int num_locs = (map->num_locations < OBS_NUM_LOCATIONS) ? map->num_locations : OBS_NUM_LOCATIONS;
+        for (int loc = 0; loc < OBS_NUM_LOCATIONS; loc++) {
+            if (loc < num_locs) {
+                Location* l = &map->locations[loc];
+                int unit_owner = unit_at[loc];
+                UnitType unit_type = unit_type_at[loc];
 
-        // Unit type at each location (0=none, 1=army, 2=fleet)
-        int offset = 75;
-        for (int i = 0; i < env->game->map->num_locations; i++) {
-            int owner = get_unit_at_location(env->game, i);
-            if (owner >= 0) {
-                UnitType t = UNIT_NONE;
-                for (int u = 0; u < env->game->powers[owner].num_units; u++) {
-                    if (env->game->powers[owner].units[u].location == i) {
-                        t = env->game->powers[owner].units[u].type;
-                        break;
-                    }
+                // Unit type one-hot (3 features): [Army, Fleet, Empty]
+                base[idx++] = (unit_type == UNIT_ARMY) ? 1.0f : 0.0f;
+                base[idx++] = (unit_type == UNIT_FLEET) ? 1.0f : 0.0f;
+                base[idx++] = (unit_type == UNIT_NONE) ? 1.0f : 0.0f;
+
+                // Unit owner one-hot (8 features): [AUS, ENG, FRA, GER, ITA, RUS, TUR, None]
+                for (int p = 0; p < MAX_POWERS; p++) {
+                    base[idx++] = (unit_owner == p) ? 1.0f : 0.0f;
                 }
-                base[offset + i] = (float)t;
+                base[idx++] = (unit_owner < 0) ? 1.0f : 0.0f;  // No unit
+
+                // Supply center owner one-hot (8 features): [AUS, ENG, FRA, GER, ITA, RUS, TUR, Neutral]
+                int sc_owner = l->owner_power;
+                int is_sc = l->has_supply_center;
+                for (int p = 0; p < MAX_POWERS; p++) {
+                    base[idx++] = (is_sc && sc_owner == p) ? 1.0f : 0.0f;
+                }
+                base[idx++] = (is_sc && sc_owner < 0) ? 1.0f : 0.0f;  // Neutral SC
+
+                // Buildable (1 feature): home center, empty, and in adjustment phase
+                int is_home = l->is_home_center;
+                int can_build = (is_home >= 0 && is_home == agent &&
+                                 unit_at[loc] < 0 &&
+                                 game->phase == PHASE_WINTER_ADJUSTMENT);
+                base[idx++] = can_build ? 1.0f : 0.0f;
             } else {
-                base[offset + i] = 0.0f;
+                // Pad with zeros for locations beyond map size
+                for (int f = 0; f < OBS_FEATURES_PER_LOC; f++) {
+                    base[idx++] = 0.0f;
+                }
             }
         }
 
-        // Centers per power (7 powers)
-        offset += 75;
-        for (int p = 0; p < MAX_POWERS; p++) {
-            base[offset + p] = (float)env->game->powers[p].num_centers;
+        // Global features: 21 values
+
+        // Phase one-hot (6 features)
+        for (int p = 0; p < 6; p++) {
+            base[idx++] = (game->phase == p) ? 1.0f : 0.0f;
         }
 
-        // Units per power (7 powers)
-        offset += 7;
+        // Year normalized (1 feature): (year - 1901) / max_years
+        float max_years = (float)game->max_years;
+        if (max_years < 1) max_years = 10.0f;
+        base[idx++] = (float)(game->year - 1901) / max_years;
+
+        // Build delta per power (7 features): (centers - units) / 10, clamped
         for (int p = 0; p < MAX_POWERS; p++) {
-            base[offset + p] = (float)env->game->powers[p].num_units;
+            int delta = game->powers[p].num_centers - game->powers[p].num_units;
+            float normalized = (float)delta / 10.0f;
+            if (normalized < -1.0f) normalized = -1.0f;
+            if (normalized > 1.0f) normalized = 1.0f;
+            base[idx++] = normalized;
         }
 
-        // Welfare per power (7 powers)
-        offset += 7;
+        // Welfare per power (7 features): welfare_points / 100, clamped
         for (int p = 0; p < MAX_POWERS; p++) {
-            base[offset + p] = (float)env->game->powers[p].welfare_points;
+            float normalized = (float)game->powers[p].welfare_points / 100.0f;
+            if (normalized > 1.0f) normalized = 1.0f;
+            base[idx++] = normalized;
+        }
+    }
+}
+
+// Decode action integer into an Order struct
+// Action encoding: action = unit_index * 64 + order_type
+// order_type: 0=HOLD, 1-30=MOVE, 31-50=SUPPORT, 51-60=CONVOY, 61=DISBAND, 62=BUILD_ARMY, 63=BUILD_FLEET
+static void decode_action_to_order(GameState* game, int power_id, int action, Order* order) {
+    Power* power = &game->powers[power_id];
+    Map* map = game->map;
+
+    int unit_idx = action / ACTION_ORDERS_PER_UNIT;  // 0-16
+    int order_type = action % ACTION_ORDERS_PER_UNIT;  // 0-63
+
+    // Initialize order
+    memset(order, 0, sizeof(Order));
+    order->power_id = power_id;
+    order->result = RESULT_NONE;
+
+    // Check if unit exists
+    if (unit_idx >= power->num_units) {
+        // No unit at this slot - create a dummy HOLD for first unit if any
+        if (power->num_units > 0) {
+            order->type = ORDER_HOLD;
+            order->unit_location = power->units[0].location;
+            order->unit_type = power->units[0].type;
+        } else {
+            order->type = ORDER_NONE;
+        }
+        return;
+    }
+
+    Unit* unit = &power->units[unit_idx];
+    order->unit_location = unit->location;
+    order->unit_type = unit->type;
+
+    if (order_type == 0) {
+        // HOLD
+        order->type = ORDER_HOLD;
+    }
+    else if (order_type >= 1 && order_type <= 30) {
+        // MOVE to adjacent location (index into adjacency list)
+        int adj_idx = order_type - 1;
+        Location* loc = &map->locations[unit->location];
+
+        if (adj_idx < loc->num_adjacent) {
+            int target = loc->adjacencies[adj_idx];
+            // Check if move is valid for this unit type
+            if (can_move(map, unit->type, unit->location, target)) {
+                order->type = ORDER_MOVE;
+                order->target_location = target;
+            } else {
+                // Invalid move - default to HOLD
+                order->type = ORDER_HOLD;
+            }
+        } else {
+            // Invalid adjacency index - default to HOLD
+            order->type = ORDER_HOLD;
+        }
+    }
+    else if (order_type >= 31 && order_type <= 50) {
+        // SUPPORT HOLD - support unit at adjacent location
+        int adj_idx = order_type - 31;
+        Location* loc = &map->locations[unit->location];
+
+        if (adj_idx < loc->num_adjacent) {
+            int target = loc->adjacencies[adj_idx];
+            // Check if there's a unit to support at target
+            int unit_there = get_unit_at_location(game, target);
+            if (unit_there >= 0) {
+                order->type = ORDER_SUPPORT_HOLD;
+                order->target_location = target;
+                order->target_unit_location = target;
+            } else {
+                order->type = ORDER_HOLD;
+            }
+        } else {
+            order->type = ORDER_HOLD;
+        }
+    }
+    else if (order_type >= 51 && order_type <= 60) {
+        // CONVOY - simplified, just hold for now
+        // Full convoy support requires more complex action encoding
+        order->type = ORDER_HOLD;
+    }
+    else if (order_type == 61) {
+        // DISBAND (voluntary, for Welfare Diplomacy)
+        if (game->welfare_mode) {
+            order->type = ORDER_DISBAND;
+        } else {
+            order->type = ORDER_HOLD;
+        }
+    }
+    else if (order_type == 62 || order_type == 63) {
+        // BUILD (only valid during adjustment phase)
+        if (game->phase == PHASE_WINTER_ADJUSTMENT) {
+            // Check if we can build (more centers than units)
+            if (power->num_centers > power->num_units) {
+                // Find a buildable home center
+                for (int h = 0; h < map->num_homes[power_id]; h++) {
+                    int home_loc = map->home_centers[power_id][h];
+                    if (get_unit_at_location(game, home_loc) < 0) {
+                        order->type = ORDER_BUILD;
+                        order->unit_location = home_loc;
+                        order->unit_type = (order_type == 62) ? UNIT_ARMY : UNIT_FLEET;
+                        return;
+                    }
+                }
+            }
+        }
+        order->type = ORDER_HOLD;
+    }
+    else {
+        order->type = ORDER_HOLD;
+    }
+}
+
+// Process actions from the action buffer and populate orders for each power
+// Only processes if orders haven't been submitted via game_submit_orders
+static void process_actions(Env* env) {
+    if (!env->actions || !env->game) {
+        return;
+    }
+
+    GameState* game = env->game;
+    int32_t* actions = (int32_t*)env->actions;
+
+    // Check if any power already has orders (from game_submit_orders)
+    // If so, don't overwrite them with action buffer
+    int has_existing_orders = 0;
+    for (int p = 0; p < MAX_POWERS; p++) {
+        if (game->powers[p].num_orders > 0) {
+            has_existing_orders = 1;
+            break;
+        }
+    }
+    if (has_existing_orders) {
+        return;  // Orders already submitted via string path
+    }
+
+    // Process action for each power
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        int action = actions[p];
+
+        // Decode action and create order
+        Order order;
+        decode_action_to_order(game, p, action, &order);
+
+        // Add order if valid
+        if (order.type != ORDER_NONE) {
+            power->orders[power->num_orders++] = order;
         }
 
-        // Phase and year (2 values)
-        offset += 7;
-        base[offset + 0] = (float)env->game->phase;
-        base[offset + 1] = (float)env->game->year;
+        // For movement phases, add HOLD orders for units without explicit orders
+        if (game->phase == PHASE_SPRING_MOVEMENT || game->phase == PHASE_FALL_MOVEMENT) {
+            for (int u = 0; u < power->num_units; u++) {
+                // Check if this unit already has an order
+                int has_order = 0;
+                for (int o = 0; o < power->num_orders; o++) {
+                    if (power->orders[o].unit_location == power->units[u].location) {
+                        has_order = 1;
+                        break;
+                    }
+                }
+                // Add HOLD order if no order exists
+                if (!has_order) {
+                    Order hold = {0};
+                    hold.type = ORDER_HOLD;
+                    hold.unit_location = power->units[u].location;
+                    hold.unit_type = power->units[u].type;
+                    hold.power_id = p;
+                    hold.result = RESULT_NONE;
+                    power->orders[power->num_orders++] = hold;
+                }
+            }
+        }
     }
 }
 
@@ -4287,6 +4507,9 @@ void c_step(Env* env) {
 
     GameState* game = env->game;
 
+    // Decode actions from buffer and populate orders
+    process_actions(env);
+
     // Process current phase
     switch (game->phase) {
         case PHASE_SPRING_MOVEMENT:
@@ -4328,6 +4551,22 @@ void c_step(Env* env) {
         for (int i = 0; i < MAX_POWERS; i++) {
             env->terminals[i] = 1;
         }
+
+        // Populate logging data for this episode
+        env->log.n += 1.0f;
+
+        // Calculate averages across all powers
+        float total_welfare = 0.0f;
+        float total_centers = 0.0f;
+        float total_units = 0.0f;
+        for (int i = 0; i < MAX_POWERS; i++) {
+            total_welfare += (float)game->powers[i].welfare_points;
+            total_centers += (float)game->powers[i].num_centers;
+            total_units += (float)game->powers[i].num_units;
+        }
+        env->log.avg_welfare += total_welfare / MAX_POWERS;
+        env->log.avg_centers += total_centers / MAX_POWERS;
+        env->log.avg_units += total_units / MAX_POWERS;
     }
 }
 

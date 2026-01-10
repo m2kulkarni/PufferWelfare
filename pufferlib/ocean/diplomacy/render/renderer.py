@@ -23,9 +23,9 @@ except ImportError:
 from .map_data import (
     MAP_WIDTH, MAP_HEIGHT, UNIT_RADIUS, FLEET_SIZE, ARROW_HEAD_SIZE, LINE_WIDTH,
     LABEL_FONT_SIZE, SC_SIZE,
-    PROVINCE_COORDS, DISLODGED_COORDS, POWER_COLORS, POWER_NAMES,
+    PROVINCE_COORDS, DISLODGED_COORDS, POWER_COLORS, POWER_UNIT_COLORS, POWER_NAMES,
     PHASE_NAMES, SUPPLY_CENTERS, LOC_INDEX_TO_NAME, LABEL_COORDS,
-    get_coords, get_coords_by_index, get_power_color, get_location_name,
+    get_coords, get_coords_by_index, get_power_color, get_location_name, get_power_unit_color,
 )
 from .province_polygons import PROVINCE_POLYGONS
 
@@ -315,18 +315,11 @@ class DiplomacyRenderer:
         rl.BeginTextureMode(target)
         rl.ClearBackground(SEA_COLOR)
 
-        # Apply scale if needed
-        if scale != 1.0:
-            # Scale all drawing
-            for i in range(int(scale)):
-                pass  # Raylib doesn't have easy global scale, we'll handle below
-
-        # Draw background map texture (scaled if needed)
+        # Draw background map texture
         if self.map_texture:
             if scale == 1.0:
                 rl.DrawTexture(self.map_texture, 0, 0, colors.WHITE)
             else:
-                # Draw scaled
                 src = ffi.new('Rectangle *', [0, 0, self.map_texture.width, self.map_texture.height])[0]
                 dst = ffi.new('Rectangle *', [0, 0, width, height])[0]
                 origin = ffi.new('Vector2 *', [0, 0])[0]
@@ -334,21 +327,13 @@ class DiplomacyRenderer:
         else:
             rl.DrawRectangle(0, 0, width, height, SEA_COLOR)
 
-        # For 1:1 rendering, draw everything directly
-        if scale == 1.0:
-            self._draw_province_influence(game_state)
-            self._draw_supply_centers(game_state)
-            if self.show_labels:
-                self._draw_labels()
-            self._draw_units(game_state)
-        else:
-            # For scaled rendering, we need to scale coordinates
-            # This is more complex - for now just use 1:1
-            self._draw_province_influence(game_state)
-            self._draw_supply_centers(game_state)
-            if self.show_labels:
-                self._draw_labels(font_size=int(LABEL_FONT_SIZE * scale))
-            self._draw_units(game_state)
+        # Draw game elements (note: scaled rendering only affects map texture and labels)
+        self._draw_province_influence(game_state)
+        self._draw_supply_centers(game_state)
+        if self.show_labels:
+            font_size = int(LABEL_FONT_SIZE * scale) if scale != 1.0 else None
+            self._draw_labels(font_size=font_size)
+        self._draw_units(game_state)
 
         rl.EndTextureMode()
 
@@ -368,14 +353,18 @@ class DiplomacyRenderer:
 
         return arr
 
-    def _draw_province_influence(self, game_state):
-        """Draw colored overlays for provinces owned by each power."""
-        # Build ownership map from supply centers
+    def _build_ownership_map(self, game_state):
+        """Build a mapping of province names to owning power IDs."""
         ownership = {}
         for power_id, power_data in enumerate(game_state['powers']):
             for center_idx in power_data['centers']:
                 center_name = get_location_name(center_idx)
                 ownership[center_name] = power_id
+        return ownership
+
+    def _draw_province_influence(self, game_state):
+        """Draw colored overlays for provinces owned by each power."""
+        ownership = self._build_ownership_map(game_state)
 
         # Draw filled polygons for owned provinces
         for province_name, polygons in PROVINCE_POLYGONS.items():
@@ -394,12 +383,7 @@ class DiplomacyRenderer:
 
     def _draw_supply_centers(self, game_state):
         """Draw supply center ownership markers."""
-        # Build ownership map from game state
-        ownership = {}
-        for power_id, power_data in enumerate(game_state['powers']):
-            for center_idx in power_data['centers']:
-                center_name = get_location_name(center_idx)
-                ownership[center_name] = power_id
+        ownership = self._build_ownership_map(game_state)
 
         for sc_name in SUPPLY_CENTERS:
             x, y = get_coords(sc_name)
@@ -437,7 +421,7 @@ class DiplomacyRenderer:
     def _draw_units(self, game_state):
         """Draw all units on the map."""
         for power_id, power_data in enumerate(game_state['powers']):
-            color = get_power_color(power_id)
+            color = get_power_unit_color(power_id)
             for unit in power_data['units']:
                 loc_idx = unit['location']
                 loc_name = get_location_name(loc_idx)
@@ -451,25 +435,27 @@ class DiplomacyRenderer:
                 else:  # UNIT_FLEET
                     self._draw_fleet(x, y, color)
 
+    def _draw_textured_unit(self, texture, x, y, color):
+        """Draw a unit with texture, shadow, and colored background."""
+        w, h = texture.width, texture.height
+        # Shadow
+        rl.DrawRectangleRounded(
+            ffi.new('Rectangle *', [x - w/2 + 2, y - h/2 + 2, w, h])[0],
+            0.3, 4, (0, 0, 0, 100)
+        )
+        # Colored background
+        rl.DrawRectangleRounded(
+            ffi.new('Rectangle *', [x - w/2, y - h/2, w, h])[0],
+            0.3, 4, color
+        )
+        # Icon
+        rl.DrawTexture(texture, int(x - w/2), int(y - h/2), colors.WHITE)
+
     def _draw_army(self, x, y, color):
         """Draw army symbol (tank icon or fallback circle)."""
         if self.army_texture:
-            w = self.army_texture.width
-            h = self.army_texture.height
-            # Draw shadow (offset, semi-transparent black)
-            rl.DrawRectangleRounded(
-                ffi.new('Rectangle *', [x - w/2 + 2, y - h/2 + 2, w, h])[0],
-                0.3, 4, (0, 0, 0, 100)
-            )
-            # Draw colored background with rounded corners
-            rl.DrawRectangleRounded(
-                ffi.new('Rectangle *', [x - w/2, y - h/2, w, h])[0],
-                0.3, 4, color
-            )
-            # Draw black icon on top
-            rl.DrawTexture(self.army_texture, int(x - w/2), int(y - h/2), colors.WHITE)
+            self._draw_textured_unit(self.army_texture, x, y, color)
         else:
-            # Fallback: draw circle
             rl.DrawCircle(int(x + 2), int(y + 2), UNIT_RADIUS, (0, 0, 0, 100))
             rl.DrawCircle(int(x), int(y), UNIT_RADIUS, color)
             rl.DrawCircleLines(int(x), int(y), UNIT_RADIUS, (0, 0, 0, 255))
@@ -477,22 +463,8 @@ class DiplomacyRenderer:
     def _draw_fleet(self, x, y, color):
         """Draw fleet symbol (ship icon or fallback diamond)."""
         if self.fleet_texture:
-            w = self.fleet_texture.width
-            h = self.fleet_texture.height
-            # Draw shadow (offset, semi-transparent black)
-            rl.DrawRectangleRounded(
-                ffi.new('Rectangle *', [x - w/2 + 2, y - h/2 + 2, w, h])[0],
-                0.3, 4, (0, 0, 0, 100)
-            )
-            # Draw colored background with rounded corners
-            rl.DrawRectangleRounded(
-                ffi.new('Rectangle *', [x - w/2, y - h/2, w, h])[0],
-                0.3, 4, color
-            )
-            # Draw black icon on top
-            rl.DrawTexture(self.fleet_texture, int(x - w/2), int(y - h/2), colors.WHITE)
+            self._draw_textured_unit(self.fleet_texture, x, y, color)
         else:
-            # Fallback: draw diamond
             size = FLEET_SIZE
             self._draw_diamond(x + 2, y + 2, size, (0, 0, 0, 100))
             self._draw_diamond(x, y, size, color)
@@ -634,8 +606,7 @@ class DiplomacyRenderer:
 
     def _draw_orders(self, game_state):
         """Draw order visualizations (arrows, support lines, etc.)."""
-        # Orders are not directly exposed in query_game_state yet
-        # This will be implemented in order_viz.py
+        # TODO: Integrate with OrderVisualizer when order data is exposed
         pass
 
     def _draw_hud(self, game_state, show_welfare):

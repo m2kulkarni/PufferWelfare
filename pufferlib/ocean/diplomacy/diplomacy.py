@@ -26,36 +26,35 @@ class Diplomacy(pufferlib.PufferEnv):
         render_mode=None,
         buf=None,
         seed=1,
+        **kwargs,
     ):
+        # Handle string params from config files
+        if isinstance(max_years, str):
+            max_years = int(max_years)
+        if isinstance(welfare_mode, str):
+            welfare_mode = welfare_mode.lower() in ('true', '1', 'yes')
+
         self.max_years = max_years
         self.welfare_mode = welfare_mode
         self.num_players = num_players
         self.render_mode = render_mode
         self.seed = seed
 
-        # Define single observation space (required by PufferEnv)
-        # TODO: Expand this to proper structured observation later
-        # For now, simple flat vector: 76 board + 76 units + 7 centers + 7 units_count + 7 welfare + 1 phase + 1 year
-        # Total: 175 features
+        # Observation space: 81 locations × 20 features + 21 global = 1641
+        # Per location: unit_type(3) + unit_owner(8) + sc_owner(8) + buildable(1) = 20
+        # Global: phase(6) + year(1) + build_delta(7) + welfare(7) = 21
         self.single_observation_space = spaces.Box(
-            low=0, high=2100, shape=(175,), dtype=np.float32
+            low=0, high=1, shape=(1641,), dtype=np.float32
         )
 
-        # Define action space
-        # For now, simplified discrete action space
-        # Will expand to full order space later
-        self.single_action_space = spaces.Discrete(1000)
+        # Action space: 17 unit slots × 64 order types = 1088
+        # action = unit_index * 64 + order_type
+        self.single_action_space = spaces.Discrete(1088)
 
         # Number of agents (required by PufferEnv)
         self.num_agents = num_players
 
-        # For vectorized environments
-        if buf is not None:
-            self.envs = buf.envs
-        else:
-            self.envs = 1
-
-        # Now call parent init (sets up buffers)
+        # Call parent init (sets up buffers via set_buffers)
         super().__init__(buf)
 
         # Initialize C environment handle

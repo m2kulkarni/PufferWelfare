@@ -1017,3 +1017,52 @@ class Drone(nn.Module):
 
         values = self.value(hidden)
         return logits, values
+
+
+class Diplomacy(nn.Module):
+    """
+    Simple MLP policy for Welfare Diplomacy.
+
+    Observation: 1641 features (81 locations × 20 features + 21 global)
+    Action: Discrete(1088) = 17 unit slots × 64 order types
+    """
+    def __init__(self, env, hidden_size=512, **kwargs):
+        super().__init__()
+        self.is_continuous = False
+
+        # Get shapes from environment
+        obs_size = env.single_observation_space.shape[0]  # 1641
+        self.num_actions = env.single_action_space.n      # 1088
+
+        # Encoder: observations → hidden features
+        self.encoder = nn.Sequential(
+            layer_init(nn.Linear(obs_size, hidden_size)),
+            nn.ReLU(),
+            layer_init(nn.Linear(hidden_size, hidden_size)),
+            nn.ReLU(),
+        )
+
+        # Actor: hidden → action logits
+        self.actor = layer_init(nn.Linear(hidden_size, self.num_actions), std=0.01)
+
+        # Critic: hidden → value estimate
+        self.value_fn = layer_init(nn.Linear(hidden_size, 1), std=1.0)
+
+    def forward_eval(self, observations, state=None):
+        hidden = self.encode_observations(observations)
+        actions, value = self.decode_actions(hidden)
+        return actions, value
+
+    def forward(self, observations, state=None):
+        hidden = self.encode_observations(observations)
+        actions, value = self.decode_actions(hidden)
+        return actions, value
+
+    def forward_train(self, x, state=None):
+        return self.forward(x, state)
+
+    def encode_observations(self, observations, state=None):
+        return self.encoder(observations.float())
+
+    def decode_actions(self, hidden, state=None):
+        return self.actor(hidden), self.value_fn(hidden)

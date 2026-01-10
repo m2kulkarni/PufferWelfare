@@ -26,9 +26,28 @@ static int my_init(Env* env, PyObject* args, PyObject* kwargs) {
     return 0;
 }
 
-// Stub for log function (required by env_binding.h)
+// Log function: populate dict with logged metrics from Log struct
 static int my_log(PyObject* dict, Log* log) {
-    // TODO: Implement logging
+    // Add average metrics to the dict
+    PyObject* avg_welfare = PyFloat_FromDouble((double)log->avg_welfare);
+    PyObject* avg_centers = PyFloat_FromDouble((double)log->avg_centers);
+    PyObject* avg_units = PyFloat_FromDouble((double)log->avg_units);
+
+    if (!avg_welfare || !avg_centers || !avg_units) {
+        Py_XDECREF(avg_welfare);
+        Py_XDECREF(avg_centers);
+        Py_XDECREF(avg_units);
+        return -1;
+    }
+
+    PyDict_SetItemString(dict, "avg_welfare", avg_welfare);
+    PyDict_SetItemString(dict, "avg_centers", avg_centers);
+    PyDict_SetItemString(dict, "avg_units", avg_units);
+
+    Py_DECREF(avg_welfare);
+    Py_DECREF(avg_centers);
+    Py_DECREF(avg_units);
+
     return 0;
 }
 
@@ -600,6 +619,46 @@ static PyObject* game_set_phase(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+// Get all orders for a power (for visualization)
+static PyObject* get_orders(PyObject* self, PyObject* args) {
+    PyObject* handle_obj;
+    int power_id;
+    if (!PyArg_ParseTuple(args, "Oi", &handle_obj, &power_id)) {
+        return NULL;
+    }
+
+    Env* env = (Env*)PyLong_AsVoidPtr(handle_obj);
+    if (!env || !env->game) {
+        PyErr_SetString(PyExc_ValueError, "Invalid env handle or game not initialized");
+        return NULL;
+    }
+
+    if (power_id < 0 || power_id >= MAX_POWERS) {
+        PyErr_SetString(PyExc_ValueError, "Invalid power id");
+        return NULL;
+    }
+
+    Power* power = &env->game->powers[power_id];
+    PyObject* orders_list = PyList_New(power->num_orders);
+
+    for (int i = 0; i < power->num_orders; i++) {
+        Order* order = &power->orders[i];
+        PyObject* order_dict = PyDict_New();
+
+        PyDict_SetItemString(order_dict, "type", PyLong_FromLong((long)order->type));
+        PyDict_SetItemString(order_dict, "unit_type", PyLong_FromLong((long)order->unit_type));
+        PyDict_SetItemString(order_dict, "unit_location", PyLong_FromLong(order->unit_location));
+        PyDict_SetItemString(order_dict, "target_location", PyLong_FromLong(order->target_location));
+        PyDict_SetItemString(order_dict, "target_unit_location", PyLong_FromLong(order->target_unit_location));
+        PyDict_SetItemString(order_dict, "dest_location", PyLong_FromLong(order->dest_location));
+        PyDict_SetItemString(order_dict, "result", PyLong_FromLong((long)order->result));
+
+        PyList_SetItem(orders_list, i, order_dict);
+    }
+
+    return orders_list;
+}
+
 // Define custom methods macro
 #define MY_METHODS \
     {"query_game_state", query_game_state, METH_VARARGS, "Query game state"}, \
@@ -623,7 +682,8 @@ static PyObject* game_set_phase(PyObject* self, PyObject* args) {
     {"get_num_orders", get_num_orders_binding, METH_VARARGS, "Get number of orders for a power"}, \
     {"get_order_result", get_order_result_binding, METH_VARARGS, "Get result code for an order (RESULT_SUCCESS, RESULT_BOUNCE, etc.)"}, \
     {"get_order_unit_location", get_order_unit_location, METH_VARARGS, "Get the unit location index for an order (after coast normalization)"}, \
-    {"game_set_phase", game_set_phase, METH_VARARGS, "Set game phase and year (e.g., S1901M, F1901R, W1901A)"}
+    {"game_set_phase", game_set_phase, METH_VARARGS, "Set game phase and year (e.g., S1901M, F1901R, W1901A)"}, \
+    {"get_orders", get_orders, METH_VARARGS, "Get all orders for a power (for visualization)"}
 
 static PyObject* game_submit_orders(PyObject* self, PyObject* args) {
     PyObject* handle_obj;
