@@ -2,7 +2,6 @@ name: Diplomacy CI
 
 on:
   pull_request:
-    branches: [welfare]
   push:
     branches: [welfare]
   workflow_dispatch:
@@ -44,4 +43,5 @@ jobs:
           tests/diplomacy/c_tests
           tests/diplomacy/original/test_datc.py
           tests/test_diplomacy.py
+          tests/test_agent_worktree.py
           -q

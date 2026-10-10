@@ -29,6 +29,10 @@ Keep shared rules here; tool-specific entry files must only point to them.
 - Record the tool and a unique session name in the issue/PR. Before handing off,
   record the branch, commit, changes, test results, and remaining problems.
   Another collaborator must be able to continue without your private chat history.
+- For dependent changes, use the official `github/gh-stack` extension. Start the
+  next issue from its parent branch in a new worktree; list the parent PR in the
+  handoff. Keep each PR draft until reviewed. A stack is not permission to merge
+  unapproved changes: every included PR needs explicit human approval.
 - The issue must explain the intended result, how to check it, and what is outside
   the change. Cite a rule source when changing game behavior.
 - Old plans, status documents, comments, and commit messages can be wrong.

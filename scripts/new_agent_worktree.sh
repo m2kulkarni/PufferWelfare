@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "usage: $0 <issue-number> <lowercase-hyphenated-slug>" >&2
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "usage: $0 <issue-number> <lowercase-hyphenated-slug> [parent-branch]" >&2
   exit 2
 fi
 
 issue_number="$1"
 slug="$2"
+base="${3:-origin/welfare}"
 
 if [[ ! "$issue_number" =~ ^[0-9]+$ ]]; then
   echo "issue number must contain digits only" >&2
@@ -31,8 +32,11 @@ if [[ -e "$worktree_path" ]]; then
   exit 1
 fi
 
+if [[ "$base" == "origin/welfare" ]]; then
+  git -C "$repo_root" fetch origin welfare
+fi
+base_commit="$(git -C "$repo_root" rev-parse --verify --end-of-options "${base}^{commit}")"
 mkdir -p "$worktree_parent"
-git -C "$repo_root" fetch origin welfare
-git -C "$repo_root" worktree add -b "$branch" "$worktree_path" origin/welfare
+git -C "$repo_root" worktree add -b "$branch" "$worktree_path" "$base_commit"
 
 printf '%s\n' "$worktree_path"
