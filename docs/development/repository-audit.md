@@ -20,7 +20,12 @@ The full Diplomacy command in AGENTS.md initially produced **205 passed,
 still expected obsolete dimensions. The pilot changes only those storage/interface
 assertions, grounded in the existing header and wrapper; it does not change engine
 behavior or DATC outcomes. The same command then produced **210 passed,
-0 failed, 0 errors, 46 skipped**. Linux/Python 3.11 remains to be verified by CI.
+0 failed, 0 errors, 46 skipped**. GitHub CI later reproduced **210 passed,
+46 skipped** on Ubuntu/Python 3.11.17. See
+[the run](https://github.com/m2kulkarni/PufferWelfare/actions/runs/38074332182).
+The focused builder initially relaxed checks for missing C function declarations.
+The pilot now adds the two declarations and treats missing declarations as build
+errors. Existing unused-code and signedness warnings remain visible.
 Many welfare tests are skipped, and some map tests contain relaxed expectations.
 A green baseline therefore does not establish Welfare Diplomacy fidelity.
 
