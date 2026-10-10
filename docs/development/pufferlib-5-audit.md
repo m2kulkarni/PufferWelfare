@@ -138,6 +138,13 @@ were read, not executed.
   and computed the common ancestor/divergence counts.
 - On this Darwin arm64 machine, `nvcc` is absent. No CUDA build, GPU training,
   multi-GPU, speed, or numerical parity check has been run.
+- In a separate clean upstream worktree, ran
+  `bash build.sh minimal --cpu --debug` with macOS's Bash 3.2.57. It downloaded
+  Raylib 5.5, then failed before compilation at line 208:
+  `-DPUFFER_${ENV^^}: bad substitution`. That uppercase expansion needs newer
+  Bash; the native CPU build has not been validated on this device. No upstream
+  source was changed to hide the failure. The Mac migration needs an explicit
+  shell prerequisite or a reviewed portable build-script change.
 - Ran `python -m pytest tests/test_selfplay.py --collect-only -q` from upstream
   using our isolated Python 3.9.6 test environment. It failed collection:
   `ModuleNotFoundError: No module named 'pufferlib'`, one error, no tests collected.
