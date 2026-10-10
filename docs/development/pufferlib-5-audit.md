@@ -4,9 +4,11 @@ Audit date: 10 October 2026. Author: Codex session `/root`.
 
 This is a source audit, not a successful training run. Migration has not started.
 Environment findings were independently checked by `/root/rules_audit`; build,
-platform and workflow review is being completed by `/root/governance_audit`.
+platform and workflow findings by `/root/governance_audit`.
 The [detailed environment contract](pufferlib-5-environment-contract.md) records
 source locations, adapter invariants, proposed orders/masks and regression gates.
+The [build/platform audit](pufferlib-5-build-audit.md) includes test entry points,
+dependency/asset provenance, platform support and stack coordination limits.
 
 ## Versions and the size of the change
 
@@ -112,6 +114,12 @@ orders over several steps without exposing other powers' pending orders, then
 calls simultaneous adjudication once. It changes the meaning of an RL step;
 discounting, masks and throughput metrics must account for that. Alternative
 full-order designs should be evaluated before committing to a vocabulary size.
+
+The independent audit also found that training appears to process frozen-policy
+trajectories with policy 0, without a visible row filter. This may be intentional
+symmetric self-play experience reuse, not a confirmed bug. Its objective is
+unverified for a general-sum game. Start with one policy and test exactly which
+trajectories train the learner before adopting historical-policy self-play.
 
 ## Build, tests and reproducibility risks
 
@@ -236,9 +244,16 @@ GitHub approval count is zero because the human and author use one account;
 human approval remains mandatory in shared instructions. No destructive push
 was attempted to test enforcement. Issue #4 is closed; the audit is issue #3.
 
-Two audit collaborator sessions reported account usage errors. Their audits have
-not been completed; a user-reported reset prompted one retry. This draft must not
-be described as independently reviewed while those checks remain unfinished.
+Two audit collaborator sessions initially reported account usage errors. After
+the owner reported a reset, both resumed and produced independent source audits.
+The environment review corrected an overstatement about custom network hooks;
+the workflow review caught a missing helper-test path in the shared test command.
+Both were corrected. Final assembled documentation review remains pending.
+
+The official extension published this audit as draft PR #7 above workflow PR #6
+in stack #8. No migration code or new PR has been merged. Independent helper tests
+passed 9/9; the combined local suite passed 219 tests with 46 skips. GitHub CI for
+the new stack is pending; do not substitute local results for its result.
 
 The 11:47 PM UK follow-up is active for this chat on 10 October 2026. Its prompt
 requests another follow-up 5 hours 30 minutes later if work remains. Scheduling

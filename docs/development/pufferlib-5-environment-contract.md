@@ -220,6 +220,16 @@ PufferLib creates policy 0 as trainable and every higher policy index as frozen.
 
 The native self-play pool stores checkpoint paths, randomly samples them, and loads them into fixed historical bank indices (`PufferLib-upstream/src/pufferl.cu:2512-2544`, `3030-3054`). The bank index remains the environment `tag`; the framework does not expose which checkpoint/individual is currently loaded as an observation feature.
 
+There is another unverified objective choice: although frozen policies have no
+optimizer or gradients, `train_epoch_gpu` processes all `total_agents` rows with
+policy 0 and no visible filter for its row layout (`src/pufferl.cu:1460-1566`).
+Frozen-policy trajectories therefore appear to update policy 0. This could be
+intentional reuse of symmetric self-play experience, not necessarily a bug, but
+its suitability for general-sum Welfare Diplomacy is unproven. Begin with
+`num_policies=1`. Before historical self-play, use a controlled test with zero
+primary rewards and nonzero frozen-policy rewards to identify which trajectories
+change learner weights, and make an explicit objective decision.
+
 More importantly, the timeout path says “treat as truncate + reset” but only calls `pufferl_load_policy`; it does not call `env_restart`, set terminal, clear recurrent state, or wait for game boundaries (`PufferLib-upstream/src/pufferl.cu:3124-3134`). Several environments set `boundary_reached`, and setup initializes it (`PufferLib-upstream/ocean/soccer/soccer.h:400-414`; `src/pufferl.cu:1085-1086`), but a repository-wide search at this commit finds no core read of `boundary_reached`. Tests referencing Python `count_aligned` target a package absent from this checkout and do not demonstrate native C/CUDA boundary alignment.
 
 Thus native self-play is usable only as a simple, carefully configured checkpoint-opponent baseline. It does not natively provide:
