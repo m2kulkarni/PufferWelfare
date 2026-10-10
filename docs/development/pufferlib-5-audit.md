@@ -3,7 +3,10 @@
 Audit date: 10 October 2026. Author: Codex session `/root`.
 
 This is a source audit, not a successful training run. Migration has not started.
-Build/platform and environment findings are being checked by other sessions.
+Environment findings were independently checked by `/root/rules_audit`; build,
+platform and workflow review is being completed by `/root/governance_audit`.
+The [detailed environment contract](pufferlib-5-environment-contract.md) records
+source locations, adapter invariants, proposed orders/masks and regression gates.
 
 ## Versions and the size of the change
 
@@ -51,7 +54,7 @@ Implemented means visible in code; it does not mean tested on our simulator.
 | Multi-head discrete actions | `NUM_ATNS`, `ACT_SIZES`, per-head masked sampling/loss | Supports factorized heads, not automatic conditional joint orders or adjudication legality |
 | Legal action masks | `Agent.action_mask`, stored rollout masks, masked sampling and PPO loss | Diplomacy must generate masks; all-masked heads and conditional orders need explicit tests |
 | Continuous actions | Continuous decoder and Gaussian loss in `src/algo.cu` | Not needed for Diplomacy; masks are ignored for continuous actions |
-| Frozen policies and self-play pool | `run_train`, checkpoint pool/resampling in `src/pufferl.cu`, `[selfplay]` config | CPU environments only; environment defines policy assignment and episode boundaries |
+| Frozen policies and self-play pool | `run_train`, checkpoint pool/resampling in `src/pufferl.cu`, `[selfplay]` config | CPU environments only; timeout changes weights without an actual boundary reset despite its comment. Validate/implement safe between-game swapping |
 | Match evaluation | `eval_make`, `eval_loop`; policy-0 score/draw metrics | Generic two-policy evaluation is not a seven-player welfare tournament or partner-memory benchmark |
 | Scripted-bot ladder | `puf_set_bot_policy`, `[bot_eval]`, final ladder evaluation | Existing evaluator changes agent/bot counts to one each; cannot assume it supports seven-player Diplomacy |
 | Multi-GPU training | NCCL gradient averaging and `launch_train` process fork | Local GPU processes, not a proven multi-node scheduler; CUDA must not initialize before fork |
@@ -95,6 +98,20 @@ features we would have to design; self-play and an RNN do not implement them.
    no training speedup has been measured here.
 6. Version action/observation schemas and checkpoints. Raw weights cannot safely
    stand in for a reproducible experiment or a full training-resume snapshot.
+
+The adapter must also respect initialization before buffer binding, float terminal
+storage, terminal auto-reset with the final reward preserved, and clearing rewards
+on the following ordinary step. There is no separate native truncation channel.
+Every action head needs at least one legal choice; an all-zero mask can produce
+illegal actions and differs between CPU and CUDA inference. Flat native logs
+average floating-point episode sums; detailed game records need separate storage.
+
+The proposed single-head atomic-order collection protocol is an interface design
+for review, not an adopted rule or implemented feature. It collects each power's
+orders over several steps without exposing other powers' pending orders, then
+calls simultaneous adjudication once. It changes the meaning of an RL step;
+discounting, masks and throughput metrics must account for that. Alternative
+full-order designs should be evaluated before committing to a vocabulary size.
 
 ## Build, tests and reproducibility risks
 
