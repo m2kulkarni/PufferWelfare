@@ -85,6 +85,19 @@ Implemented means visible in code; it does not mean tested on our simulator.
 
 ## Build, tests and reproducibility risks
 
+The documented companion is PufferTank branch `5.0`, pinned for this audit at
+`240d9794872fc1f9e0948588d1f453dbbc15b8f5`. Its installer and Docker scripts
+were read, not executed.
+
+- PufferTank's image starts from CUDA 13.0.2/cuDNN development on Ubuntu 24.04.
+  That is the documented container's baseline, not proof that every older CUDA
+  version is unsupported. The installer expects apt/root and clones a moving
+  `5.0` branch; it is not a macOS installer or a pinned reproducible build.
+- `docker.sh test` mounts the host Docker socket, uses host network/IPC, and
+  changes local X11 access. Its build path removes a matching existing container.
+  Do not run it as a harmless smoke test or use it as agent security isolation.
+  Use a minimal, approved GPU container without those privileges for our CI.
+
 - `build.sh` downloads Raylib and some environment-specific dependencies when
   absent. The URLs are not a checksummed dependency lock. Review/pin only the
   dependencies needed by Diplomacy rather than running the general installer.
@@ -103,6 +116,9 @@ Implemented means visible in code; it does not mean tested on our simulator.
   tests reference removed modules; the presence of tests is not a working suite.
   Native CUDA numerical tests exist, but still need a supported GPU and explicit
   selection. Preserve our Diplomacy tests instead of inheriting everything blindly.
+- Some native test sources also reference removed includes: for example
+  `tests/test_protein.cu` includes `gp_cuda.cu`, absent from the checkout. That
+  test's documented compile command is not a validated test entry point.
 - `close_pufferl` deliberately leaves allocations to process exit. Training and
   repeated evaluation in one long-running process need resource-lifetime checks;
   do not assume the old Python library lifecycle remains supported.
