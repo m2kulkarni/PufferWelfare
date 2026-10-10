@@ -249,7 +249,8 @@ Two audit collaborator sessions initially reported account usage errors. After
 the owner reported a reset, both resumed and produced independent source audits.
 The environment review corrected an overstatement about custom network hooks;
 the workflow review caught a missing helper-test path in the shared test command.
-Both were corrected. Final assembled documentation review remains pending.
+Both were corrected. Check PR #7 for the final assembled-document review and
+exact reviewed commit.
 
 The official extension published this audit as draft PR #7 above workflow PR #6
 in stack #8. No migration code or new PR has been merged. Independent helper tests
