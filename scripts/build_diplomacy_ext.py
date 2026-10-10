@@ -7,7 +7,6 @@ build surface.
 """
 
 from pathlib import Path
-import platform
 
 import numpy
 from setuptools import Extension, setup
@@ -16,12 +15,10 @@ from setuptools import Extension, setup
 ROOT = Path(__file__).resolve().parents[1]
 DIPLOMACY = ROOT / "pufferlib" / "ocean" / "diplomacy"
 
-compile_args = ["-O2", "-std=c99", "-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION"]
-if platform.system() == "Darwin":
-    # Match the repository build until the existing forward declarations are fixed.
-    compile_args.append("-Wno-error=implicit-function-declaration")
-elif platform.system() == "Linux":
-    compile_args.append("-Wno-implicit-function-declaration")
+compile_args = [
+    "-O2", "-std=c99", "-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION",
+    "-Werror=implicit-function-declaration",
+]
 
 
 extension = Extension(

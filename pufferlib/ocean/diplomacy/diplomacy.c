@@ -4,6 +4,11 @@
 #include <stdio.h>
 #include <ctype.h>
 
+// These functions are used by order validation before their definitions.
+int find_convoy_path(Map* map, int start, int end,
+                     int* fleet_locs, int num_fleets);
+int is_convoy_possible(GameState* game, int from, int to);
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
