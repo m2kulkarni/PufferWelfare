@@ -66,7 +66,7 @@ Keep shared rules here; tool-specific entry files must only point to them.
 ```bash
 python -m pip install -r requirements/diplomacy-test.txt
 python scripts/build_diplomacy_ext.py build_ext --inplace
-python -m pytest tests/diplomacy/c_tests tests/diplomacy/original/test_datc.py tests/test_diplomacy.py -q
+python -m pytest tests/diplomacy/c_tests tests/diplomacy/original/test_datc.py tests/test_diplomacy.py tests/test_agent_worktree.py -q
 ```
 
 Run the relevant test first, then the full command above. Report the command,
