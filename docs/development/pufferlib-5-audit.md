@@ -47,7 +47,7 @@ Implemented means visible in code; it does not mean tested on our simulator.
 | Muon optimizer and mixed precision | `src/algo.cu` Muon, FP32 master weights with BF16 parameters | Old Adam settings do not transfer; use `--float` for numerical checks |
 | MinGRU/highway recurrent network | `mingru_gate`, `mingru_scan_forward` in `src/algo.cu` | The pinned train scan loops over time: do not assume the advertised time-parallel implementation is active |
 | Hidden-state carry | `reset_every_horizon=0`, rollout initial states and terminal resets | Useful within games; not an individual-keyed memory across returning-partner encounters |
-| Custom encoders/decoders/networks | Function tables in `src/algo.cu`; environment `*_net.h` examples | Existing PyTorch Diplomacy policy cannot be imported unchanged; backward buffers are manual |
+| Custom encoders/decoders | `src/ocean.cu` hooks and environment `*_net.h` examples | `build_arch` fixes the network to MinGRU at this pin; changing it needs core edits, not a supplied network-selection hook. Existing PyTorch policy and gradients do not transfer |
 | Multi-head discrete actions | `NUM_ATNS`, `ACT_SIZES`, per-head masked sampling/loss | Supports factorized heads, not automatic conditional joint orders or adjudication legality |
 | Legal action masks | `Agent.action_mask`, stored rollout masks, masked sampling and PPO loss | Diplomacy must generate masks; all-masked heads and conditional orders need explicit tests |
 | Continuous actions | Continuous decoder and Gaussian loss in `src/algo.cu` | Not needed for Diplomacy; masks are ignored for continuous actions |
@@ -61,11 +61,24 @@ Implemented means visible in code; it does not mean tested on our simulator.
 | Standalone CPU evaluation/rendering | `src/puffercpu.c`, `build.sh --cpu` | No native CPU training; preserve CPU engine tests and use an NVIDIA machine for training |
 | Web rendering/builds | `build.sh --web`, Emscripten branches | Optional; not needed for the first migration loop |
 | Debugging/profiling | `--debug`, `--profile`, timing/dashboard/NVTX in source | Check sanitizer coverage by platform; throughput claims require local measurements |
-| Checkpoints | `puf_save_weights`, `puf_load_weights_into`: raw flat FP32 `.bin` | Weights only, no optimizer/RNG/episode state or self-describing schema; not exact training resume |
+| Checkpoints | `puf_save_weights`, `puf_load_weights_into`: raw flat FP32 `.bin` | Weights only, no optimizer/RNG/episode state or self-describing schema; not exact training resume. Loading is wired into evaluation, not a verified training warm-start |
 | Logs and configuration | `[section]` configuration, `--section.key=value`, per-run INI logs | Record upstream SHA, environment version, seeds and metrics alongside results; do not reuse stale fork keys |
 | Ocean examples and pretrained models | `ocean/*`, release assets and config examples | Useful interface references, not Diplomacy baselines; no need to import all environments/assets |
 
 ## Compatibility decisions before implementation
+
+Recommendation: adopt the native build/adapter and useful training tools in
+stages, not every feature at once. Removing Python from rollout/training can
+reduce overhead, but custom CUDA policies and missing CPU training can make
+development harder. An upgrade does not automatically speed up our engineering.
+Use CPU engine tests and a retained research interface for fast iteration; add
+GPU optimization only after the correct game trains.
+
+No throughput claim from the upstream arcade/physics environments should be
+treated as a Diplomacy measurement. Track legal whole-game decisions, complete
+games and raw welfare alongside agent steps per second. Returning-partner memory,
+partner identity, negotiated agreements and private messaging remain research
+features we would have to design; self-play and an RNN do not implement them.
 
 1. Keep the current C engine and test harness as the reference behavior while
    building a small native adapter. Do not rewrite adjudication to match a new
@@ -131,6 +144,26 @@ were read, not executed.
 - Logs save configuration and learning history; `.bin` checkpoints contain only
   weights. Record revision/schema/seed/config/metric definitions and environment
   traces separately. Exact resume requires more state than upstream saves.
+
+## Configuration changes
+
+Our fork declares package version 3.0.0 (`setup.py`), with `__version__ = 3.0`.
+Do not copy `pufferlib/config/ocean/diplomacy.ini` unchanged.
+
+| Current fork setting | 5.0 contract |
+| --- | --- |
+| Python package/env/policy names | Environment compiled into the executable; native encoder/decoder hooks |
+| `vec.num_envs`, `batch_size`, `num_workers` | `total_agents`, `num_buffers`, `num_threads`; agents are not games |
+| `train.bptt_horizon` | `train.horizon`, with native layout/alignment constraints |
+| `update_epochs`, prioritized replay settings | Native `replay_ratio` and minibatch schedule; no verified direct translation |
+| Adam beta/epsilon settings | Muon momentum and a different update algorithm |
+| `train.checkpoint_interval` | `base.checkpoint_interval`; raw native weights rather than Torch state |
+| `policy.hidden_size` | Still a width, but not the same network or checkpoint schema |
+
+The upstream default `vec.total_agents=4096` is not divisible by seven. For a
+seven-player environment, each buffer must hold whole games and policy counts
+must match across buffers. Derive the counts explicitly; do not use power-of-two
+defaults or sweep total agents without enforcing the seven-player layout.
 
 ## Checks actually run
 
