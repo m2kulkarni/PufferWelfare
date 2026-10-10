@@ -165,3 +165,13 @@ pufferlib/ocean/impulse_wars/benchmark/
 
 CLAUDE.md
 .claude/
+
+# Share instruction imports and skill links; keep other Claude settings private.
+!/CLAUDE.md
+!/pufferlib/ocean/diplomacy/CLAUDE.md
+!/.claude/
+/.claude/*
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/welfare-diplomacy-engine
+!/.claude/skills/welfare-diplomacy-review

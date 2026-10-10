@@ -1,0 +1,55 @@
+name: Small change
+description: Describe one change and how another person can check it.
+title: "[change] "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Simulator correctness
+        - RL interface or baseline
+        - Tests or CI
+        - Agent workflow or repository governance
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What should change?
+      description: Explain the problem and the result you want in plain language.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What do we know?
+      description: Link code, examples, test results, or rule sources. Separate observations from guesses.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: How will we know it works?
+      description: List checks another agent can run. Include missing tests or checks that cannot run.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: What is outside this change?
+      description: Say what will remain unchanged and list known problems needing separate work.
+    validations:
+      required: true
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Ready for an agent
+      options:
+        - label: The issue can be completed in one branch/worktree.
+          required: true
+        - label: Known problems and unanswered rule questions are stated.
+          required: true
+        - label: The issue explains how to check the result without hiding failures.
+          required: true

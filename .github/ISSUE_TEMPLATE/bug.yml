@@ -1,0 +1,59 @@
+name: Simulator bug
+description: Explain a simulator problem and how to reproduce it.
+title: "[bug] "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Diplomacy engine or adjudication
+        - Welfare scoring or time horizon
+        - Observation, action, reward, or termination
+        - Build, packaging, or CI
+        - Rendering or documentation
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Revision
+      description: Commit SHA, branch, and Python/platform details.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How can we reproduce it?
+      description: Include phase, powers, units, centers, orders/actions, seed, and exact command where applicable.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen, and why?
+      description: Cite a rule, reference code, named adjudication test, or documented interface. Say if you are unsure.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: How will we check the fix?
+      description: State the expected test result, what must stay unchanged, and known gaps. Do not hide failures or skips.
+    validations:
+      required: true
+  - type: checkboxes
+    id: risk
+    attributes:
+      label: What might this affect?
+      options:
+        - label: This may change game/adjudication rules.
+        - label: This may change observations, actions, rewards, termination, or checkpoint compatibility.
+        - label: This may change CI, dependencies, permissions, or agent instructions.

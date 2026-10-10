@@ -11,11 +11,17 @@ from pufferlib.ocean.diplomacy import Diplomacy, binding
 class TestCMap:
     """Tests for C map data and adjacencies."""
 
-    def test_map_has_76_locations(self):
-        """Test that the map has exactly 76 locations."""
+    def test_internal_map_entries(self):
+        """Check storage layout, not playability or observation completeness."""
         env = Diplomacy()
         map_info = binding.query_map_info(env.env_handle)
-        assert map_info["num_locations"] == 76
+        # 75 provinces, Switzerland sentinel, and six split-coast entries.
+        # The observation encoder's 81 slots are a separate, unresolved contract.
+        assert map_info["num_locations"] == 82
+        names = [loc["name"] for loc in map_info["locations"]]
+        assert len(names) == len(set(names)) == 82
+        assert "SWI" in names
+        assert "STP/SC" in names
 
     def test_location_names(self):
         """Test that location names are correctly loaded."""

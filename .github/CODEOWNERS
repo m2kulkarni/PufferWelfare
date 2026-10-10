@@ -1,0 +1,26 @@
+# Repository governance and agent instructions
+/.github/ @m2kulkarni
+/.gitignore @m2kulkarni
+/AGENTS.md @m2kulkarni
+/CLAUDE.md @m2kulkarni
+/.agents/ @m2kulkarni
+/.claude/ @m2kulkarni
+/docs/development/ @m2kulkarni
+/docs/rules/ @m2kulkarni
+
+# Simulator semantics and public RL interfaces
+/pufferlib/ocean/diplomacy/ @m2kulkarni
+/tests/diplomacy/ @m2kulkarni
+/tests/test_diplomacy.py @m2kulkarni
+/pufferlib/ocean/environment.py @m2kulkarni
+/pufferlib/ocean/torch.py @m2kulkarni
+/pufferlib/config/ocean/diplomacy.ini @m2kulkarni
+/config/ocean/diplomacy.ini @m2kulkarni
+
+# Build and dependency surface
+/setup.py @m2kulkarni
+/setup.cfg @m2kulkarni
+/pyproject.toml @m2kulkarni
+/requirements/ @m2kulkarni
+/scripts/build_diplomacy_ext.py @m2kulkarni
+/scripts/new_agent_worktree.sh @m2kulkarni
