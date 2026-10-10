@@ -1,52 +1,60 @@
-# PufferWelfare agent instructions
+# Instructions for every agent
 
-## Repository contract
+## Write clearly and report honestly
 
-- The active development branch is `welfare`. Do not commit directly to it.
-- Use one issue, branch, and worktree per coding agent. Name branches
-  `agent/<issue>-<short-slug>` and give each agent only its own worktree path.
-- Keep non-trivial changes narrowly scoped to an issue with explicit acceptance
-  criteria, non-goals, and a rule or interface source when behavior is involved.
-- Do not treat `docs/PLAN.md`, `docs/STATUS.md`, commit messages, or current code
-  as authoritative game rules. They are implementation history and may be stale.
+- Write issues, PRs, reviews, comments, and instructions in plain language.
+  Say what is wrong, what changed, how you checked it, and what remains.
+  Explain technical terms when needed. Avoid filler and vague claims.
+- Report problems you find, including existing bugs, failed or skipped tests,
+  checks you could not run, and disagreements between rule sources. Separate
+  what you observed from what you suspect. Link code or a reproduction.
+- Do not hide failures, disable checks, add skips to avoid failures, or change
+  expected results just to make tests pass. If a test is outdated or wrong,
+  explain why with evidence and have another agent review the correction.
+- Do not claim tests passed unless you ran them. Passing tests do not prove
+  behavior the tests never exercise. Do not call unfinished work complete.
+- Fix the assigned problem. Report unrelated problems in the issue or a separate
+  issue; do not silently ignore them or expand the change without explaining it.
 
-## Review and merge
+## Work on one issue at a time
 
-- The author agent must not review its own change. Use a fresh agent context for
-  review and record both agent identities in the pull request.
-- Agents sharing one GitHub account cannot provide an independently attributable
-  GitHub approval. In that case, the reviewer leaves a `COMMENT` review and the
-  orchestration record provides the separation.
-- Agents do not merge pull requests during the pilot. A human owns every merge.
-- Human review is mandatory for game-rule or adjudication changes, reward/action/
-  observation changes, CI and dependency changes, agent instructions, repository
-  permissions, and branch-protection settings.
+- The development branch is `welfare`. Do not commit directly to it.
+- Each coding agent gets its own branch and worktree (a separate checkout).
+  Name branches `agent/<issue>-<short-slug>`. Use only your assigned checkout.
+- The issue must explain the intended result, how to check it, and what is outside
+  the change. Cite a rule source when changing game behavior.
+- Old plans, status documents, comments, and commit messages can be wrong.
+  Current code describes what happens, not necessarily what should happen.
 
-## Diplomacy changes
+## Review and approval
 
-- For changes under `pufferlib/ocean/diplomacy/`, its bindings, its model/config,
-  or `tests/diplomacy/`, use the `welfare-diplomacy-engine` skill in
-  `.codex/skills/` and read `docs/rules/welfare-diplomacy.md` first.
-- For reviews of those changes, use the `welfare-diplomacy-review` skill.
-- Preserve the boundary between the C engine, Python binding/wrapper, and the RL
-  observation/action/reward interface. Coupled constants must change together.
-- Add a focused regression test before fixing behavior. Never weaken or rewrite a
-  golden adjudication expectation merely to make the implementation pass.
+- A different agent must review the change. Record author and reviewer names.
+- If both agents use the same GitHub account, the reviewer leaves a `COMMENT`
+  review. Do not describe it as an independent GitHub approval.
+- During this pilot, the owner will read the entire PR and discuss it before
+  approving. Keep it draft. Do not merge without explicit human approval.
+- Human review is required for game rules, rewards, actions, observations, CI,
+  dependencies, agent instructions, permissions, and branch protection.
 
-## Validation
+## Simulator changes
 
-Set up the focused test environment with:
+- Use `.codex/skills/welfare-diplomacy-engine/SKILL.md` for Diplomacy engine,
+  binding, wrapper, model/config, or test changes. Read
+  `docs/rules/welfare-diplomacy.md` first.
+- Reviewers use `.codex/skills/welfare-diplomacy-review/SKILL.md`.
+- Follow state through the Python wrapper, binding, and C engine. When changing
+  observation or action sizes, update every dependent layer together.
+- Before fixing behavior, add a small test that fails for the original bug.
+  Do not change expected adjudication results without a cited rule correction.
+
+## Build and test
 
 ```bash
 python -m pip install -r requirements/diplomacy-test.txt
 python scripts/build_diplomacy_ext.py build_ext --inplace
-```
-
-Then run the narrowest relevant test, followed by the full Diplomacy gate:
-
-```bash
 python -m pytest tests/diplomacy/c_tests tests/diplomacy/original/test_datc.py tests/test_diplomacy.py -q
 ```
 
-Do not update pass counts in documentation unless that exact command was run and
-the Python version, platform, commit, failures, errors, and skips are recorded.
+Run the relevant test first, then the full command above. Report the command,
+commit, Python version, platform, and passed/failed/errored/skipped counts.
+If a check cannot run, say why and leave it listed as unfinished.

@@ -1,7 +1,8 @@
 # Multi-agent development workflow
 
-This is the minimum control plane for PufferWelfare. It favors traceability and
-rule fidelity over agent throughput.
+Each coding agent works in a separate checkout. Another agent reviews the change,
+and the owner approves the merge. Follow the plain-language and honesty rules in
+`AGENTS.md`: report bugs and failed, skipped, or unrun checks.
 
 ## Responsibility boundaries
 
@@ -11,7 +12,7 @@ rule fidelity over agent throughput.
 | Task tracking | GitHub Issues and issue forms | Issues, labels, and milestones must first be enabled/configured by a repository admin |
 | Code changes | Coding agent in the issue worktree | The agent must not review or merge its own change |
 | Independent review | Fresh reviewer agent plus PR review/comment | Two agents using one GitHub account are not distinct GitHub approvers |
-| Automated gate | GitHub Actions `diplomacy-tests` job | CI establishes tested behavior, not the correct interpretation of an ambiguous rule |
+| Automatic tests | GitHub Actions `diplomacy-tests` job | CI establishes tested behavior, not the correct interpretation of an ambiguous rule |
 | Sensitive approval | CODEOWNERS plus branch rules, backed by a human | Requires a non-author human identity and repository administration access |
 
 ## Issue to merge loop
@@ -28,11 +29,11 @@ rule fidelity over agent throughput.
    failing regression test before a behavioral fix and opens a draft PR.
 4. A fresh reviewer agent receives the issue and PR, not the author's hidden
    reasoning. It uses the review skill, runs the relevant checks, and leaves a
-   findings-first review.
-5. The author resolves findings. The same reviewer re-checks; after two failed
-   review cycles, escalate rather than looping indefinitely.
-6. CI must pass. A human reviews every pilot PR and any sensitive change, then
-   performs the merge. The orchestrator archives/removes the worktree only after
+   review that starts with the problems found.
+5. The author resolves findings. The same reviewer re-checks; if two review rounds fail to resolve a problem,
+   explain what is stuck and ask the owner for direction.
+6. CI must pass. A human reviews every pilot PR and any sensitive change, discusses it with the author, and explicitly approves before
+   the merge. The orchestrator archives/removes the worktree only after
    merge.
 
 ## GitHub setup stages
@@ -87,8 +88,8 @@ author/reviewer GitHub identities are known:
   distinct bot or collaborator identity.
 
 With all agents and the human using the same GitHub account, a required approval
-would deadlock self-authored PRs and would not prove agent independence. In that
-configuration, keep human merge as a procedural gate or provision a dedicated
+would prevent approval of PRs made through the owner's account and would not prove agent independence. In that
+configuration, keep human merge as a manual approval or provision a dedicated
 author bot/account before enabling required approvals.
 
 ## Sensitive paths

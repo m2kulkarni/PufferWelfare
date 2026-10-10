@@ -1,43 +1,36 @@
-## Linked issue
-
 Closes #
 
-## Ownership
+## What was wrong?
+
+Explain the problem and its effect. Link the issue and relevant code or example.
+
+## What changed?
+
+Describe the fix in plain language. Say what this PR leaves unchanged.
+For a game-rule change, cite the paper, reference code, or named adjudication test.
+
+## How was it checked?
+
+- Commands and results, including failures and skips:
+- Commit, Python version, and platform:
+- GitHub CI result (or explain why it has not run):
+
+Explain changes to test expectations. Do not hide failing checks or describe
+untested behavior as working.
+
+## What still needs work?
+
+List known bugs, unrun checks, missing test coverage, and questions about rules.
+Separate observed problems from suspected ones. Link follow-up issues where
+they exist. Do not write "none" merely because the tests pass.
+
+## Who reviewed it?
 
 - Author agent:
 - Reviewer agent (must be different):
-- GitHub principal used by the author:
+- GitHub account(s) used:
+- Review result and any fixes made after review:
 
-## Change
-
-### Outcome
-
-
-### Non-goals
-
-
-### Rule or interface source
-
-Link the exact DATC case, paper section, pinned reference-code location, or
-interface contract. Write `not rule-bearing` when this does not change behavior.
-
-## Verification
-
-- Focused command and result:
-- Full Diplomacy gate and result:
-- Python/platform/commit:
-
-## Risk and approval
-
-- [ ] A regression test covers behavioral changes, or this PR is not behavioral.
-- [ ] Standard and Welfare modes were both checked when shared logic changed.
-- [ ] Observation/action constants and model assumptions stay synchronized.
-- [ ] The reviewer did not author this change.
-- [ ] This PR does not weaken a golden test without a cited upstream correction.
-- [ ] Human review is recorded for rule, interface, CI/dependency, permission, or agent-instruction changes.
-- [ ] The author and reviewer used distinct GitHub principals, or the reviewer used a `COMMENT` review and did not claim an independently attributable approval.
-
-## Remaining uncertainty
-
-List unresolved source conflicts, unrun checks, or compatibility risks. Write
-`none known` only after independent review.
+If both agents share an account, use a COMMENT review and say so.
+Keep the pilot PR draft until the owner has read it, discussed it, and approved.
+Agents must not merge without explicit human approval.

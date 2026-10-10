@@ -1,5 +1,5 @@
 name: Simulator bug
-description: Report a reproducible simulator, binding, or RL-interface defect.
+description: Explain a simulator problem and how to reproduce it.
 title: "[bug] "
 body:
   - type: dropdown
@@ -24,7 +24,7 @@ body:
   - type: textarea
     id: reproduction
     attributes:
-      label: Minimal reproduction
+      label: How can we reproduce it?
       description: Include phase, powers, units, centers, orders/actions, seed, and exact command where applicable.
       render: shell
     validations:
@@ -32,27 +32,27 @@ body:
   - type: textarea
     id: actual
     attributes:
-      label: Actual behavior
+      label: What happened?
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior and source
-      description: Cite a DATC case, paper section, pinned reference-code location, or explicit interface contract. Say when the source is unknown.
+      label: What should happen, and why?
+      description: Cite a rule, reference code, named adjudication test, or documented interface. Say if you are unsure.
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
-      label: Acceptance criteria and non-goals
-      description: State the smallest observable fix and what this issue must not change.
+      label: How will we check the fix?
+      description: State the expected test result, what must stay unchanged, and known gaps. Do not hide failures or skips.
     validations:
       required: true
   - type: checkboxes
     id: risk
     attributes:
-      label: Sensitive surfaces
+      label: What might this affect?
       options:
         - label: This may change game/adjudication rules.
         - label: This may change observations, actions, rewards, termination, or checkpoint compatibility.

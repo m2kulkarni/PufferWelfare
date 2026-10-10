@@ -1,35 +1,31 @@
 ---
 name: welfare-diplomacy-review
-description: Independently review a PufferWelfare pull request or diff that changes Diplomacy rules, the C/Python simulator boundary, tests, CI, or the RL interface. Do not use to author the same change or to merge it.
+description: Review a PufferWelfare change to Diplomacy rules, C/Python code, tests, CI, or observations/actions/rewards. The reviewer must be a different agent from the author and must not merge.
 ---
 
-# Independent PufferWelfare review
+# Reviewing a change
 
-Do not review a change you authored. If the author and reviewer agent identities
-are the same, stop and have the orchestrator assign a fresh agent context.
+Do not review your own work. Ask for a different reviewer if you authored it.
+Read the issue, diff, `AGENTS.md`, and `docs/rules/welfare-diplomacy.md`.
+Do not edit the author's checkout or merge the PR.
 
-Read the linked issue, the diff, `AGENTS.md`, and
-`docs/rules/welfare-diplomacy.md`. Review only; do not edit the author's worktree
-or merge the pull request.
+1. Check that the change solves the issue and stays within its stated scope.
+2. For game changes, check that the cited source supports the expected result.
+   Current code and old status reports can be wrong.
+3. Check memory and array bounds across C/Python, phase transitions, observations,
+   actions, rewards, reset behavior, and standard/welfare modes where affected.
+4. Check that new tests catch the original bug. Inspect changed expectations,
+   removed checks, and new skips. Reject changes made only to hide failures.
+5. Run the relevant tests and the full command in `AGENTS.md`. Report failures,
+   errors, skips, and checks you could not run, with reasons.
+6. Check the issue and PR are understandable and honest. Report misleading
+   claims, omitted problems, and unexplained changes to tests.
 
-## Review order
+Write the problems first, most serious first. Give the file/line, what can go
+wrong, and evidence. Separate observed bugs from suspected ones. If you found
+no new problems, say so, then list missing checks and remaining uncertainty.
+Do not treat a passing suite as proof of untested behavior.
 
-1. Confirm the diff matches the issue's scope and non-goals.
-2. For behavioral changes, verify that the claimed rule/interface source actually
-   supports the expectation. Treat current code and historical status notes as
-   evidence, not authority.
-3. Check C/Python ownership and lifetime, bounds, phase transitions, coupled
-   observation/action constants, standard-vs-welfare isolation, and deterministic
-   reset/reward/termination behavior as applicable.
-4. Check that a regression test fails for the original defect and exercises the
-   public path where practical. Reject golden-test weakening without a cited
-   upstream correction.
-5. Run the narrow test and the full Diplomacy gate from `AGENTS.md`, or explain
-   exactly why a command could not run.
-6. Identify sensitive changes that still require human approval.
-
-Report findings first, ordered by severity, with tight file/line references and a
-concrete failure mode. If there are no findings, state that explicitly and list
-remaining test or source uncertainty. When author and reviewer share one GitHub
-principal, submit a `COMMENT` review rather than an `APPROVE` review because the
-platform cannot attest agent separation.
+Name the author and reviewer. If both use the same GitHub account, leave a
+`COMMENT` review, not `APPROVE`. The owner will read and discuss the pilot PR
+before approving. Do not merge without explicit human approval.

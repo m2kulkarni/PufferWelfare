@@ -1,29 +1,15 @@
-# Pilot: establish a reproducible agent development loop
+# First setup issue
 
-GitHub issue creation is pending because repository Issues is disabled. Copy
-this body into the first issue after enabling it and link it from the pilot PR.
+Filed as [issue #2](https://github.com/m2kulkarni/PufferWelfare/issues/2).
+The current progress and remaining problems are in that issue and
+[PR #1](https://github.com/m2kulkarni/PufferWelfare/pull/1).
 
-## Scope
+The first change adds separate agent checkouts, coding/review instructions,
+issue and PR forms, human ownership of important files, and simulator tests in CI.
+It also corrects old test size expectations using the existing C header and
+Python wrapper. It does not fix game rules or redesign the agent interface.
 
-Add source-grounded agent instructions and engine/review skills, issue and PR
-forms, human ownership paths, a focused build/test gate, and an author worktree
-helper. Correct stale size assertions using the current header/wrapper/storage
-contract. Document simulator defects and staged repository settings.
-
-## Acceptance criteria
-
-- An author works on a separate branch/worktree and records its identity.
-- The focused extension builds without unrelated environment dependencies.
-- The full documented gate passes; skipped welfare coverage remains explicit.
-- A different agent inspects the diff and records findings and validation.
-- A draft PR contains that review and CI status; the human owns merge approval.
-- Issues, labels/milestone, Actions availability, and branch rules are verified
-  or explicitly left as owner actions with concrete instructions.
-
-## Non-goals
-
-No engine rule changes, observation/action redesign, RL training, blanket rewrite,
-autonomous merge permission, or copying additional reference implementation code.
-
-Suggested labels: `enhancement`, `area:infra`, `human:approval-required`.
-Suggested milestone: `M0: Reliable simulator`.
+It is ready to merge only after another agent reviews it, GitHub tests pass,
+and the owner reads the entire PR, discusses it, and approves.
+Skipped tests, missing CI, known bugs, and unfinished settings must stay visible.
+Do not claim this setup proves the simulator is correct.
