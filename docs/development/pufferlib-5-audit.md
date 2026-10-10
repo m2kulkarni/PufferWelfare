@@ -14,8 +14,9 @@ dependency/asset provenance, platform support and stack coordination limits.
 
 The target is upstream branch `5.0`, commit
 `6ffa5b10dbbbe4d1e8288367c7d9d3acd3bad4a2`. The `5.0-experiments` tag points
-to `89414204`; it contains experiments/models, not a separately versioned Python
-package. The branch and release are not interchangeable pins.
+to `89414204`; its GitHub release publishes experiment/model archive assets,
+not a separately versioned Python package. The branch and release are not
+interchangeable pins.
 
 Our development branch is `welfare`, now at `f398421f` after setup PR #1.
 Its pre-setup head was `62df16a0`. The common ancestor with upstream is
@@ -252,9 +253,6 @@ Both were corrected. Final assembled documentation review remains pending.
 
 The official extension published this audit as draft PR #7 above workflow PR #6
 in stack #8. No migration code or new PR has been merged. Independent helper tests
-passed 9/9; the combined local suite passed 219 tests with 46 skips. GitHub CI for
-the new stack is pending; do not substitute local results for its result.
-
-The 11:47 PM UK follow-up is active for this chat on 10 October 2026. Its prompt
-requests another follow-up 5 hours 30 minutes later if work remains. Scheduling
-does not override actual account limits or guarantee unattended completion.
+passed 9/9; the combined local suite passed 219 tests with 46 skips. CI also passed
+for PR #6 and the audit's initial assembled head b14c47b7. Recheck the final
+reviewed head after any further edits; local results are not a CI substitute.

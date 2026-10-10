@@ -1,7 +1,8 @@
 # PufferLib 5.0 environment-interface audit for PufferWelfare
 
-Audit date: 2026-10-10  
-Upstream checkout: `work/PufferLib-upstream` at commit `6ffa5b10dbbbe4d1e8288367c7d9d3acd3bad4a2` (`5.0`)  
+Audit date: 2026-10-10
+
+Upstream checkout: `work/PufferLib-upstream` at commit `6ffa5b10dbbbe4d1e8288367c7d9d3acd3bad4a2` (`5.0`)
 PufferWelfare checkout: `PufferWelfare` at commit `f398421f3a233352de04684ad2ff56481078e45c` (`welfare`)
 
 This is a read-only compatibility audit. It does not migrate code, change either checkout, or claim behavior that is not visible in the pinned sources. Line numbers below refer to those exact commits.
