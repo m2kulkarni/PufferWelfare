@@ -4,11 +4,33 @@ Each coding agent works in a separate checkout. Another agent reviews the change
 and the owner approves the merge. Follow the plain-language and honesty rules in
 `AGENTS.md`: report bugs and failed, skipped, or unrun checks.
 
+Codex and Claude Code are collaborators with the same responsibilities. Either
+can author or review; use a different session for review. Shared instructions live
+in `AGENTS.md` and `.agents/skills/`, not in a particular tool's private config.
+
+## Shared files
+
+- Codex reads `AGENTS.md` and discovers skills under `.agents/skills/`.
+- Root and Diplomacy `CLAUDE.md` files import the adjacent `AGENTS.md`.
+- Claude's `.claude/skills/<name>` links point to the shared skill folders.
+  Edit the shared files, not separate copies for each tool.
+- Other tools can read those same files explicitly. If a checkout does not
+  support symlinks, open `.agents/skills/<name>/SKILL.md` directly.
+
+Give each session an issue, role, worktree path, and unique name. Handoffs must
+include the branch/commit, changes, test results, and remaining problems in the
+issue or PR. Private chat history is not a substitute for that record.
+
+Discovery follows the documented conventions for
+[Codex skills](https://developers.openai.com/codex/skills/),
+[Claude instructions](https://code.claude.com/docs/en/memory), and
+[Claude skills](https://code.claude.com/docs/en/skills).
+
 ## Responsibility boundaries
 
 | Capability | Native mechanism | What it does not guarantee |
 | --- | --- | --- |
-| Coding isolation | Git branch plus worktree; Codex managed worktrees when explicitly created | Collaboration subagents share a filesystem and do not automatically get separate worktrees |
+| Separate edits | Git branch plus worktree, created by Git or the chosen tool | Starting another agent does not by itself give it a separate checkout |
 | Task tracking | GitHub Issues and issue forms | Issues, labels, and milestones must first be enabled/configured by a repository admin |
 | Code changes | Coding agent in the issue worktree | The agent must not review or merge its own change |
 | Independent review | Fresh reviewer agent plus PR review/comment | Two agents using one GitHub account are not distinct GitHub approvers |
@@ -94,6 +116,7 @@ author bot/account before enabling required approvals.
 
 ## Sensitive paths
 
-Human review is required for `.github/**`, `AGENTS.md`, `.codex/**`, build and
+Human review is required for `.github/**`, `AGENTS.md`, `CLAUDE.md`, `.agents/**`,
+`.claude/**`, build and
 dependency files, the Diplomacy engine and tests, and the observation/action/
 reward-facing model/config files listed in `.github/CODEOWNERS`.

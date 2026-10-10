@@ -1,7 +1,10 @@
 # Repository governance and agent instructions
 /.github/ @m2kulkarni
+/.gitignore @m2kulkarni
 /AGENTS.md @m2kulkarni
-/.codex/ @m2kulkarni
+/CLAUDE.md @m2kulkarni
+/.agents/ @m2kulkarni
+/.claude/ @m2kulkarni
 /docs/development/ @m2kulkarni
 /docs/rules/ @m2kulkarni
 

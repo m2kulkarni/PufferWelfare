@@ -1,5 +1,10 @@
 # Instructions for every agent
 
+These instructions apply to every collaborator, including Codex and Claude Code.
+Neither tool has a special role or authority. Either can implement or review a
+change, but the reviewer must be a different session from the author.
+Keep shared rules here; tool-specific entry files must only point to them.
+
 ## Write clearly and report honestly
 
 - Write issues, PRs, reviews, comments, and instructions in plain language.
@@ -21,6 +26,9 @@
 - The development branch is `welfare`. Do not commit directly to it.
 - Each coding agent gets its own branch and worktree (a separate checkout).
   Name branches `agent/<issue>-<short-slug>`. Use only your assigned checkout.
+- Record the tool and a unique session name in the issue/PR. Before handing off,
+  record the branch, commit, changes, test results, and remaining problems.
+  Another collaborator must be able to continue without your private chat history.
 - The issue must explain the intended result, how to check it, and what is outside
   the change. Cite a rule source when changing game behavior.
 - Old plans, status documents, comments, and commit messages can be wrong.
@@ -38,10 +46,12 @@
 
 ## Simulator changes
 
-- Use `.codex/skills/welfare-diplomacy-engine/SKILL.md` for Diplomacy engine,
+- Read `.agents/skills/welfare-diplomacy-engine/SKILL.md` for Diplomacy engine,
   binding, wrapper, model/config, or test changes. Read
   `docs/rules/welfare-diplomacy.md` first.
-- Reviewers use `.codex/skills/welfare-diplomacy-review/SKILL.md`.
+- Reviewers read `.agents/skills/welfare-diplomacy-review/SKILL.md`.
+- Read applicable `AGENTS.md` files in the directories you change. If your tool
+  does not load these files or skills automatically, open them explicitly.
 - Follow state through the Python wrapper, binding, and C engine. When changing
   observation or action sizes, update every dependent layer together.
 - Before fixing behavior, add a small test that fails for the original bug.

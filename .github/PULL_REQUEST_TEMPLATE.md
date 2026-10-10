@@ -26,11 +26,12 @@ they exist. Do not write "none" merely because the tests pass.
 
 ## Who reviewed it?
 
-- Author agent:
-- Reviewer agent (must be different):
+- Author tool and session:
+- Reviewer tool and session (must be different):
 - GitHub account(s) used:
 - Review result and any fixes made after review:
 
 If both agents share an account, use a COMMENT review and say so.
+Either Codex, Claude Code, or another collaborator can author or review.
 Keep the pilot PR draft until the owner has read it, discussed it, and approved.
 Agents must not merge without explicit human approval.
