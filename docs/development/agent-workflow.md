@@ -45,6 +45,17 @@ rule fidelity over agent throughput.
 - Create milestone `M0: Reliable simulator` for correctness, determinism, and a
   reproducible test baseline.
 
+For a dedicated GitHub App, select this repository only. Author capabilities
+need repository Contents and Pull requests write, Issues write for task tracking,
+and Actions/Checks read to inspect CI. Reviewer capabilities need Contents read
+and Pull requests write for reviews, plus Actions/Checks read. Metadata read is
+implicit. A workflow-file write capability should be limited to infrastructure
+tasks where the integration supports it. Neither role needs repository
+administration, secrets access, or merge authority. These are desired capability
+boundaries, not a claim about the installed connector's exact token scopes.
+The owner performs administration. A local worktree is isolation for edits,
+not a credential/security sandbox.
+
 ### Stage 1: minimal labels
 
 Create only labels that change routing decisions:

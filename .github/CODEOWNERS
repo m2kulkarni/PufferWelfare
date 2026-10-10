@@ -20,3 +20,4 @@
 /pyproject.toml @m2kulkarni
 /requirements/ @m2kulkarni
 /scripts/build_diplomacy_ext.py @m2kulkarni
+/scripts/new_agent_worktree.sh @m2kulkarni
