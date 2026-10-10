@@ -60,6 +60,36 @@ Discovery follows the documented conventions for
 
 ## GitHub setup stages
 
+### Dependent PRs
+
+Use GitHub's official [stack extension](https://github.com/github/gh-stack),
+not another extension with a similar name. Install with
+`gh extension install github/gh-stack` and authenticate with `gh auth login`.
+
+Create each author's checkout with
+`scripts/new_agent_worktree.sh <issue> <slug> [parent-branch]`. Omitting the parent
+starts from freshly fetched `origin/welfare`. An explicit parent must already
+resolve locally; fetch it first if needed. The helper snapshots that commit and
+does not switch another author's worktree or register a GitHub stack itself.
+
+After commits exist, adopt the branches, bottom to top, with
+`gh stack init --base welfare <bottom-branch> <next-branch>`. Publish drafts with
+`gh stack submit --auto`, then replace generated titles/descriptions with plain
+language. Record the parent issue/PR and exact reviewed commit in each handoff.
+Check `gh stack view` before rebasing/syncing. Coordinate with other authors
+before rewriting branches checked out in their worktrees; preserve dirty files.
+
+CI runs for every PR, including PRs targeting a parent agent branch. Dependent
+work can proceed before its parent merges. Do not use `gh stack merge` unless
+every PR it will include has passed review, checks, and explicit human approval.
+The extension is not a reviewer, scheduler, or source of merge permission.
+
+The active `welfare` ruleset requires PRs, resolved conversations and a successful
+`diplomacy-tests` check from GitHub Actions against the current branch. It blocks
+force pushes and deletion, with no bypass actors. The required GitHub approval
+count is zero while author and human share one account; shared instructions still
+require explicit human approval. Ruleset ID: `24849342`.
+
 ### Stage 0: enable the workflow
 
 - Enable GitHub Issues on the repository.
