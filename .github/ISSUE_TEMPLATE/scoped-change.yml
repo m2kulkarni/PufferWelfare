@@ -1,0 +1,55 @@
+name: Scoped change
+description: Propose a small implementation, test, baseline, or infrastructure change.
+title: "[change] "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Simulator correctness
+        - RL interface or baseline
+        - Tests or CI
+        - Agent workflow or repository governance
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: Describe the observable result, not a broad implementation plan.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Existing evidence
+      description: Link relevant code, tests, failures, rule sources, benchmark results, or prior discussion.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List checks another agent can verify independently.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: Name adjacent behavior this change must not alter.
+    validations:
+      required: true
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Ready for an agent
+      options:
+        - label: The issue can be completed in one branch/worktree.
+          required: true
+        - label: Rule or interface uncertainty is explicitly identified.
+          required: true
+        - label: Validation commands or observable checks are included.
+          required: true

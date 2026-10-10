@@ -23,7 +23,8 @@ class TestCBinding:
         obs, info = env.reset()
         assert obs is not None
         assert isinstance(obs, np.ndarray)
-        assert obs.shape == (7, 175)  # 7 agents, 175 features each
+        # Current interface: 81 observation slots x 20 features + 21 globals.
+        assert obs.shape == (7, 1641)
 
     def test_environment_step(self):
         """Test that the environment can take a step."""
@@ -43,13 +44,13 @@ class TestCBinding:
     def test_observation_space(self):
         """Test that observation space is correctly defined."""
         env = Diplomacy()
-        assert env.single_observation_space.shape == (175,)
+        assert env.single_observation_space.shape == (1641,)
         assert env.single_observation_space.dtype == np.float32
 
     def test_action_space(self):
         """Test that action space is correctly defined."""
         env = Diplomacy()
-        assert env.single_action_space.n == 1000
+        assert env.single_action_space.n == 1088  # 17 unit slots x 64 orders
 
     def test_num_agents(self):
         """Test that the number of agents is correct."""
@@ -63,7 +64,7 @@ class TestCBinding:
         for _ in range(3):
             obs, info = env.reset()
             assert obs is not None
-            assert obs.shape == (7, 175)
+            assert obs.shape == (7, 1641)
 
     def test_multiple_steps(self):
         """Test that the environment can take multiple steps."""
