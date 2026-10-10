@@ -83,6 +83,39 @@ Implemented means visible in code; it does not mean tested on our simulator.
 6. Version action/observation schemas and checkpoints. Raw weights cannot safely
    stand in for a reproducible experiment or a full training-resume snapshot.
 
+## Build, tests and reproducibility risks
+
+- `build.sh` downloads Raylib and some environment-specific dependencies when
+  absent. The URLs are not a checksummed dependency lock. Review/pin only the
+  dependencies needed by Diplomacy rather than running the general installer.
+- Native training links CUDA, cuBLAS, cuRAND, cuSOLVER, NCCL and NVML. The build
+  also assumes tools such as clang and ccache. Check the chosen NVIDIA machine
+  against the actual script, not just the documentation's installation example.
+- On Linux, CPU debug builds enable sanitizers. On this Mac, the script sets
+  `SANITIZE_FLAGS=()`. The `--debug` flag alone therefore does not establish
+  memory-safety testing here. Add an explicit tested sanitizer job on Linux.
+- `build.sh all` prints failed builds but exits zero. Do not use its exit code
+  as a CI success signal without fixing or wrapping that behavior transparently.
+- There is a duplicate, unreachable CPU branch referencing missing
+  `src/puffercpu.h`. The earlier CPU branch compiles `src/puffercpu.c` and exits;
+  the dead reference is not evidence that the active CPU build is broken.
+- Upstream has no checked-in GitHub Actions workflow at this pin. Several Python
+  tests reference removed modules; the presence of tests is not a working suite.
+  Native CUDA numerical tests exist, but still need a supported GPU and explicit
+  selection. Preserve our Diplomacy tests instead of inheriting everything blindly.
+- `close_pufferl` deliberately leaves allocations to process exit. Training and
+  repeated evaluation in one long-running process need resource-lifetime checks;
+  do not assume the old Python library lifecycle remains supported.
+- `env_setup` initially seeds CPU environments by index (`rng = num_envs`).
+  `base.seed` seeds other trainer state. Establish what an experiment seed controls
+  with reproducibility tests; a single config field is not proof of game replay.
+- Root upstream is MIT. Copied/vendor code and model/asset licenses still need
+  inventory. Our copied Diplomacy test notices already need an owner decision;
+  an upstream upgrade cannot resolve that provenance automatically.
+- Logs save configuration and learning history; `.bin` checkpoints contain only
+  weights. Record revision/schema/seed/config/metric definitions and environment
+  traces separately. Exact resume requires more state than upstream saves.
+
 ## Checks actually run
 
 - Cloned upstream, checked HEAD and branch against the remote, inspected source,
