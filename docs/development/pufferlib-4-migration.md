@@ -87,9 +87,9 @@ tests on 3.9 are not evidence that the full trainer supports 3.9.
    The tests cover positive deltas, no repeat reward, reset bookkeeping and the
    adapter retaining final rewards through autoreset. Review and full checks
    remain required; this fix alone does not establish a usable training game.
-3. **Real 4.0 training.** Isolate the pinned Python package and native module;
-   run a small CPU PyTorch training job on Python >=3.10. Verify nonzero reward
-   input, finite losses, policy updates, and checkpoint load behavior. Record
+3. **Real 4.0 training (issue #13).** The isolated smoke run below checks the
+   actual upstream CPU PyTorch trainer on Python >=3.10. It checks nonzero reward
+   input, finite losses, policy updates, and saved-weight reload. Record
    differences in clipping, recurrence, truncation and training configuration.
    Upstream CPU `create_vec` leaks temporary configuration dictionaries and
    leaves lifecycle management to the caller; inspect/fix these before long runs.
@@ -128,3 +128,47 @@ declarations. The build now requests POSIX 2008 declarations explicitly;
 implicit-declaration checking stays enabled. The fixed adapter passed Linux CI
 run 38182492879 (247 passed, 46 skipped). The Winter reward fix passed run
 38182603605 (252 passed, 46 skipped).
+
+## CPU training check
+
+Use a separate virtual environment with Python >=3.10. This script imports the
+pinned upstream Python files, verifies their bytes, and loads the native adapter
+under that package. It does not overwrite either checkout's Python package.
+Use a separate process so old and new packages cannot accidentally share imports.
+
+```bash
+python -m pip install -r requirements/pufferlib4-train.txt
+# macOS: use --torch-openmp to share Torch's bundled OpenMP runtime.
+python scripts/build_diplomacy_puffer4.py --upstream /path/to/PufferLib-4-source --torch-openmp
+python scripts/smoke_pufferlib4_training.py --upstream /path/to/PufferLib-4-source
+```
+
+On Linux omit `--torch-openmp`; CI installs a CPU Torch wheel and runs this as a
+separate job. The flag only changes the newly built adapter's library reference;
+it does not modify Torch, Homebrew, or upstream files. On macOS it uses Torch's
+headers/library, rewrites its retained Homebrew install name to the Torch rpath,
+and ad-hoc signs the generated library. This avoids loading two copies of libomp.
+The first training run aborted with OpenMP error 15; no unsafe duplicate-runtime
+override was used. The rebuilt run completed. Torch emits an upstream TF32 API
+deprecation warning; it has not been suppressed.
+
+The smoke policy uses upstream's MLP and trainer, with the same action mask in
+rollout and update: HOLD everywhere, or disband unit zero during Winter. It
+starts with a disband-logit bias so a short check actually sees positive rewards.
+The script verifies this restriction from recorded observations/actions. This
+avoids relying on the existing illegal non-Winter voluntary-disband behavior.
+It is a restricted integration test, not a learned or strategic baseline, and
+does not demonstrate full order legality or action-mask support in the GPU backend.
+
+On macOS arm64, Python 3.12.14 and Torch 2.9.0, a 336-step run received positive
+welfare rewards, had finite losses, changed eight parameter tensors, and restored
+identical logits/value predictions after saving, perturbing and reloading weights.
+The script prints exact configuration and measurements. Linux training CI and
+independent review are required before this slice is called checked on both systems.
+
+Important limits: upstream clips rewards to [-1, 1], so this is not yet a faithful
+optimizer of cumulative welfare. The script reports how many reward entries that
+would change. MinGRU episode resets, reward/done continuity across rollout batches,
+long-run binding leaks, GPU behavior, historical opponents, and full optimizer/RNG
+checkpoint resume still need focused tests. Do not turn this smoke script into
+the default training entry point without resolving those issues.
