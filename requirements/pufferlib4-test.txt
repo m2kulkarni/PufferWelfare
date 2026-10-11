@@ -1,0 +1,2 @@
+-r diplomacy-test.txt
+pybind11==3.0.1
