@@ -125,4 +125,6 @@ they check rejection without calling the unsafe native allocator. A separate
 test checks acceptance of the upper bound without allocating thousands of games.
 The first Linux CI run failed because strict C11 hid upstream's POSIX clock
 declarations. The build now requests POSIX 2008 declarations explicitly;
-implicit-declaration checking stays enabled. A passing rerun is still required.
+implicit-declaration checking stays enabled. The fixed adapter passed Linux CI
+run 38182492879 (247 passed, 46 skipped). The Winter reward fix passed run
+38182603605 (252 passed, 46 skipped).

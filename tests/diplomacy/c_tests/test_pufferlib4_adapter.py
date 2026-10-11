@@ -1,7 +1,7 @@
 """Exercise actual pinned 4.0 vecenv + bindings_cpu, not a mock interface.
 
-Build both extensions first. These tests do not establish correct welfare
-rewards: the first port deliberately preserves the old engine's reward bug.
+Build both extensions first. These comparisons alone do not establish correct
+welfare rewards; test_winter_rewards.py checks their timing and final delivery.
 """
 import numpy as np
 import pytest
