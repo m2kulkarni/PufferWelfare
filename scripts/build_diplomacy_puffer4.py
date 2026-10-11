@@ -46,7 +46,8 @@ def main():
         common += ["-Xpreprocessor", "-fopenmp", f"-I{omp / 'include'}"]
         omp_link = [f"-L{omp / 'lib'}", f"-Wl,-rpath,{omp / 'lib'}", "-lomp"]
     else:
-        common += ["-fopenmp"]
+        # Strict C11 otherwise hides clock_gettime/CLOCK_MONOTONIC on Linux.
+        common += ["-fopenmp", "-D_POSIX_C_SOURCE=200809L"]
     cc = shlex.split(os.environ.get("CC", "clang"))
     cxx = shlex.split(os.environ.get("CXX", "clang++"))
     definitions = ["-DEnv=DiplomacyEngine", "-DLog=DiplomacyEngineLog"]

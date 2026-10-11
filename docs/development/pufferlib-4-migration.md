@@ -114,3 +114,6 @@ configured; creation without labels succeeded. A malformed worktree command was
 rejected before changing files. One native build started before upstream checkout
 finished and failed on a missing source file; rerunning after checkout succeeded.
 The old extension still emits unused-variable/function and signedness warnings.
+The first Linux CI run failed because strict C11 hid upstream's POSIX clock
+declarations. The build now requests POSIX 2008 declarations explicitly;
+implicit-declaration checking stays enabled. A passing rerun is still required.
