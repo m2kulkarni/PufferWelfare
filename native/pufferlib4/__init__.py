@@ -7,6 +7,9 @@ import sysconfig
 import numpy as np
 
 _backend = None
+# Resource guard for this CPU pilot, not a Diplomacy rule or upstream limit.
+# Also keeps upstream's int-sized observation-count multiplication in range.
+MAX_TOTAL_AGENTS = 7 * 4096
 
 
 def _load_backend():
@@ -29,8 +32,9 @@ class DiplomacyVec:
     """
 
     def __init__(self, total_agents=7, max_years=10, welfare_mode=True, num_buffers=1):
-        if type(total_agents) is not int or total_agents <= 0 or total_agents % 7:
-            raise ValueError("total_agents must be a positive multiple of seven")
+        if (type(total_agents) is not int or total_agents <= 0
+                or total_agents > MAX_TOTAL_AGENTS or total_agents % 7):
+            raise ValueError(f"total_agents must be a multiple of seven between 7 and {MAX_TOTAL_AGENTS}")
         if type(num_buffers) is not int or num_buffers != 1:
             raise ValueError("the CPU pilot supports exactly one buffer")
         if type(max_years) is not int or not 1 <= max_years <= 1000:

@@ -21,7 +21,9 @@ changes to the old adjudication engine.
   integer actions and byte terminal flags to floats. Shapes remain 1641
   observations and one action chosen from 1088 values per power.
 - The seven powers stay adjacent in a complete game. The checked Python entry
-  point accepts a positive multiple of seven agents. This CPU path requires one
+  point accepts a positive multiple of seven agents, up to 4096 games (28,672
+  agents) in this CPU pilot. This is a resource/integer-size guard, not a game
+  rule; allocations still depend on available memory. This CPU path requires one
   buffer because upstream `cpu_vec_step` asserts that condition.
 - Upstream initializes games before attaching buffers. The adapter allocates
   game state then waits until reset to bind buffers and encode observations.
@@ -114,6 +116,10 @@ configured; creation without labels succeeded. A malformed worktree command was
 rejected before changing files. One native build started before upstream checkout
 finished and failed on a missing source file; rerunning after checkout succeeded.
 The old extension still emits unused-variable/function and signedness warnings.
+Independent review found that unbounded agent counts could overflow upstream's
+C size arithmetic. Three guarded regressions failed before the limit was added;
+they check rejection without calling the unsafe native allocator. A separate
+test checks acceptance of the upper bound without allocating thousands of games.
 The first Linux CI run failed because strict C11 hid upstream's POSIX clock
 declarations. The build now requests POSIX 2008 declarations explicitly;
 implicit-declaration checking stays enabled. A passing rerun is still required.

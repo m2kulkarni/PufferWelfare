@@ -137,3 +137,26 @@ def test_results_survive_close_and_close_is_idempotent():
     for call in [env.reset, env.log, lambda: env.step(np.zeros(7))]:
         with pytest.raises(RuntimeError, match="closed"):
             call()
+
+
+@pytest.mark.parametrize("count", [7 * (4096 + 1), 7 * 2**31, 7 * 2**80])
+def test_rejects_huge_counts_before_native_allocation(monkeypatch, count):
+    import native.pufferlib4 as adapter
+
+    def native_must_not_run():
+        raise RuntimeError("unsafe count reached the native backend")
+
+    monkeypatch.setattr(adapter, "_load_backend", native_must_not_run)
+    with pytest.raises(ValueError):
+        adapter.DiplomacyVec(total_agents=count)
+
+
+def test_pilot_upper_bound_passes_python_validation(monkeypatch):
+    import native.pufferlib4 as adapter
+
+    def stop_before_allocation():
+        raise RuntimeError("validated; stop before allocating 4096 games")
+
+    monkeypatch.setattr(adapter, "_load_backend", stop_before_allocation)
+    with pytest.raises(RuntimeError, match="validated"):
+        adapter.DiplomacyVec(total_agents=adapter.MAX_TOTAL_AGENTS)
