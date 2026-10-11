@@ -4512,6 +4512,8 @@ void c_step(Env* env) {
 
     GameState* game = env->game;
 
+    PhaseType processed_phase = game->phase;
+
     // Decode actions from buffer and populate orders
     process_actions(env);
 
@@ -4538,7 +4540,7 @@ void c_step(Env* env) {
     encode_observations(env);
 
     // Calculate rewards at end of adjustment phase based on welfare deltas
-    if (game->phase == PHASE_WINTER_ADJUSTMENT) {
+    if (processed_phase == PHASE_WINTER_ADJUSTMENT) {
         for (int i = 0; i < MAX_POWERS; i++) {
             int current = game->powers[i].welfare_points;
             int delta = current - env->last_welfare[i];
