@@ -1,0 +1,6 @@
+# Minimal CPU smoke dependencies; the full upstream package has more extras.
+numpy==1.26.4
+torch==2.9.0
+rich==15.0.0
+rich_argparse==1.8.0
+pybind11==3.0.1
