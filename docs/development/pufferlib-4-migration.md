@@ -80,10 +80,13 @@ tests on 3.9 are not evidence that the full trainer supports 3.9.
 1. **CPU interface (this PR).** Preserve existing adjudication tests; compare
    old/new transitions in standard and welfare modes, independent games,
    terminal/reset behavior, output lifetime, logging, and input validation.
-2. **Reward blocker.** Add a failing test for Winter reward timing, then fix
-   the engine once for both bindings. Currently `c_step` advances the phase
-   before checking whether to emit the Winter welfare delta. Preserving this
-   bug here does not make rewards suitable for training.
+2. **Reward blocker (issue #11).** Four new tests reproduced dropped Winter
+   rewards in both bindings, including final turns (4 failed, 1 standard-mode
+   check passed before the fix). `c_step` now remembers the processed phase
+   instead of testing the next phase. Scoring rules and adjudication are unchanged.
+   The tests cover positive deltas, no repeat reward, reset bookkeeping and the
+   adapter retaining final rewards through autoreset. Review and full checks
+   remain required; this fix alone does not establish a usable training game.
 3. **Real 4.0 training.** Isolate the pinned Python package and native module;
    run a small CPU PyTorch training job on Python >=3.10. Verify nonzero reward
    input, finite losses, policy updates, and checkpoint load behavior. Record
@@ -122,4 +125,6 @@ they check rejection without calling the unsafe native allocator. A separate
 test checks acceptance of the upper bound without allocating thousands of games.
 The first Linux CI run failed because strict C11 hid upstream's POSIX clock
 declarations. The build now requests POSIX 2008 declarations explicitly;
-implicit-declaration checking stays enabled. A passing rerun is still required.
+implicit-declaration checking stays enabled. The fixed adapter passed Linux CI
+run 38182492879 (247 passed, 46 skipped). The Winter reward fix passed run
+38182603605 (252 passed, 46 skipped).
