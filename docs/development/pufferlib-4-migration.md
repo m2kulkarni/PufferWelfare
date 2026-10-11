@@ -163,12 +163,21 @@ does not demonstrate full order legality or action-mask support in the GPU backe
 On macOS arm64, Python 3.12.14 and Torch 2.9.0, a 336-step run received positive
 welfare rewards, had finite losses, changed eight parameter tensors, and restored
 identical logits/value predictions after saving, perturbing and reloading weights.
-The script prints exact configuration and measurements. Linux training CI and
-independent review are required before this slice is called checked on both systems.
+The script prints exact configuration and measurements. Independent review
+reproduced the run and full suite (252 passed, 46 skipped); Linux CI run
+38183006374 passed both jobs at reviewed commit 3add2322. New heads still require
+CI/review re-checks after changes.
 
 Important limits: upstream clips rewards to [-1, 1], so this is not yet a faithful
 optimizer of cumulative welfare. The script reports how many reward entries that
-would change. MinGRU episode resets, reward/done continuity across rollout batches,
-long-run binding leaks, GPU behavior, historical opponents, and full optimizer/RNG
+would change. Independent review also reproduced a dropped-batch-boundary bug:
+upstream starts each rollout with zero rewards/terminals. Before the second batch,
+22 pending reward points and 14 terminal flags were discarded; another 24 reward
+points and 14 flags remained after the last batch. The reported 103 is stored
+rollout rewards, not all environment-step rewards. The script now labels it
+accordingly and reports each boundary and the final pending values. Fixing this
+trainer defect is a separate task, not a result established by a passing smoke run.
+MinGRU episode resets, long-run binding leaks, GPU behavior, historical opponents,
+and full optimizer/RNG
 checkpoint resume still need focused tests. Do not turn this smoke script into
 the default training entry point without resolving those issues.

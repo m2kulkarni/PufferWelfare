@@ -111,9 +111,18 @@ def main():
         initial = {name: value.detach().clone() for name, value in policy.named_parameters()}
         reward_total = 0.0
         clipped_reward_count = 0
+        batch_boundaries = []
         epochs = []
         for _ in range(2):
+            pending_rewards = trainer.vec_rewards.clone()
+            pending_terminals = trainer.vec_terminals.clone()
             trainer.rollouts()
+            batch_boundaries.append({
+                "pending_reward_sum": pending_rewards.sum().item(),
+                "stored_first_row_reward_sum": trainer.rewards[0].sum().item(),
+                "pending_terminal_count": pending_terminals.sum().item(),
+                "stored_first_row_terminal_count": trainer.terminals[0].sum().item(),
+            })
             is_winter = trainer.observations[:, :, 1624] == 1
             rollout_actions = trainer.actions[:, :, 0]
             if not torch.all((rollout_actions == 0) | ((rollout_actions == 61) & is_winter)):
@@ -147,13 +156,17 @@ def main():
         print(json.dumps({
             "upstream_commit": PIN, "python": sys.version.split()[0],
             "torch": torch.__version__, "network": "MLP", "device": trainer.device,
-            "steps": trainer.global_step, "reward_sum": reward_total,
+            "steps": trainer.global_step, "stored_rollout_reward_sum": reward_total,
+            "batch_boundaries": batch_boundaries,
+            "final_pending_reward_sum": trainer.vec_rewards.sum().item(),
+            "final_pending_terminal_count": trainer.vec_terminals.sum().item(),
             "reward_entries_clipped_by_upstream_trainer": clipped_reward_count,
             "changed_parameter_tensors": changed, "checkpoint_prediction_match": True,
             "config": {key: args[key] for key in ["vec", "env", "policy", "torch", "train"]},
             "losses": epochs,
             "limitations": ["restricted HOLD-or-Winter-DISBAND policy with initial bias, not a learned baseline",
                 "incomplete actions and existing game defects", "upstream reward clipping",
+                "upstream drops pending rewards and terminals between rollout batches",
                 "no recurrent, GPU, opponent-pool or full training-resume check"],
         }, indent=2))
     finally:
