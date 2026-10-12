@@ -107,8 +107,9 @@ a usable Welfare Diplomacy benchmark. Keep these limitations in PR handoffs.
 ## First-slice evidence
 
 Local native build succeeded on macOS arm64, Python 3.9.6, Clang, libomp 23.1.3.
-The focused adapter suite passed 28 tests. Full regression results and independent
-review will be recorded in the PR at an exact commit. No CUDA build, GPU training,
+The focused adapter suite passed 32 tests; the full suite passed 251 tests with
+46 existing skips. Independent review reproduced those counts at ce0ba249;
+final documentation review will be recorded in the PR. No CUDA build, GPU training,
 CPU training, or performance claim is made by this slice.
 
 Setup failures: issue creation with `area:engine` failed because the label is not
@@ -122,4 +123,6 @@ they check rejection without calling the unsafe native allocator. A separate
 test checks acceptance of the upper bound without allocating thousands of games.
 The first Linux CI run failed because strict C11 hid upstream's POSIX clock
 declarations. The build now requests POSIX 2008 declarations explicitly;
-implicit-declaration checking stays enabled. A passing rerun is still required.
+implicit-declaration checking stays enabled. Linux CI run 38183271557 passed
+at ce0ba249 (251 passed, 46 skipped). A new documentation commit still requires
+its own final review and CI check before readiness.
