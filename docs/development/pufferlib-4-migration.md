@@ -170,9 +170,48 @@ reproduced the run and full suite (252 passed, 46 skipped); Linux CI run
 38183006374 passed both jobs at reviewed commit 3add2322. New heads still require
 CI/review re-checks after changes.
 
-Important limits: upstream clips rewards to [-1, 1], so this is not yet a faithful
-optimizer of cumulative welfare. The script reports how many reward entries that
-would change. A deterministic two-batch regression reproduced the boundary bug
+Upstream clips rewards to [-1, 1]. The explicit local Torch patch now makes
+`train.clip_rewards` a boolean, defaulting to `True` to preserve existing behavior
+for other environments. The welfare CPU smoke sets it to `False`: each power's
+reward magnitude reaches the compiled advantage function without clipping or
+normalization. This follows the accumulated per-power Welfare Points objective
+in paper section 2.2 and `docs/rules/welfare-diplomacy.md`; it does not change the
+engine's scoring rules. The script reports entries outside [-1, 1], not entries
+clipped by the patched trainer.
+
+Run the dedicated check in the training environment:
+
+```bash
+python tests/test_pufferlib4_reward_clipping.py --upstream /path/to/PufferLib-4-source
+```
+
+The test observes and delegates the actual compiled CPU advantage call from the
+pinned Torch trainer. Synthetic distinct rewards for seven powers check raw
+magnitudes when disabled, unchanged default/enabled clipping, strict boolean
+validation, unchanged stored rewards, and numerical advantages. These synthetic
+rewards are interface fixtures, not claims about game scoring. Before the fix,
+the disabled test failed (27 of 28 values differed); the default/enabled test
+passed, and five invalid-setting cases errored because validation was absent.
+The initial test setup also passed a noncontiguous action tensor to upstream's
+`view`; correcting it to match the trainer's contiguous layout exposed the real
+clipping failure. No expected numerical result was changed to get a pass.
+
+With both explicit patches, the macOS arm64 CPU run on Python 3.12.14/Torch
+2.9.0 passes all three clipping checks and the three separate boundary checks.
+The restricted 336-step smoke stores 125 reward points, including 33 entries
+outside [-1, 1], without clipping; it has finite losses, eight changed parameter
+tensors and exact saved-weight predictions. The prescribed simulator suite on
+Python 3.9.6 passes 256 tests with 46 existing skips. Linux checks and independent
+review of the clipping change are still required; prior-head CI is not evidence
+for this new patch.
+
+This patch affects only the isolated Torch runtime. Native CUDA still clamps
+rewards in `src/pufferlib.cu` at the pinned upstream commit. No GPU build or
+parity test has been run, and the CPU setting is not a claim that native training
+supports it. Unclipped reward magnitudes can change optimization stability;
+the smoke test is not evidence of long-run learning performance.
+
+A deterministic two-batch regression reproduced the boundary bug
 before the local patch: two checks failed and the initial-reset check passed.
 The first row of batch two had lost transition three's rewards and terminal flags.
 After the patch, all three checks pass and the two-batch transition stream matches
@@ -193,7 +232,7 @@ advantage attributable to the carried reward. Correct bootstrapping/last-action
 learning is tracked separately in
 [#19](https://github.com/m2kulkarni/PufferWelfare/issues/19); it needs its own
 regression and may require a broader trainer change.
-Reward clipping, MinGRU episode resets, long-run binding leaks, GPU behavior,
+Native GPU reward clipping, MinGRU episode resets, long-run binding leaks, GPU behavior,
 historical opponents, and full optimizer/RNG checkpoint resume also still need
 focused tests. Do not turn this smoke script into the default training entry
 point without resolving those issues.

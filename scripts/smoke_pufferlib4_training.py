@@ -2,8 +2,8 @@
 """Check the pinned PufferLib 4 CPU trainer with explicit local patches.
 
 Run as a separate process: the old package and upstream package share a name.
-The upstream trainer clips rewards and does not mask our incomplete actions.
-Those limitations must be resolved before claiming a useful welfare baseline.
+The explicit Torch patch preserves welfare reward magnitudes. Actions and
+final-action bootstrapping remain incomplete; this is not a useful baseline.
 """
 import argparse
 import ast
@@ -15,7 +15,7 @@ import sys
 import sysconfig
 import tempfile
 
-from pufferlib4_runtime import PIN, ROLLOUT_BOUNDARY_PATCH, isolated_runtime
+from pufferlib4_runtime import PIN, REWARD_CLIPPING_PATCH, ROLLOUT_BOUNDARY_PATCH, isolated_runtime
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,7 +29,7 @@ def main():
         parser.error("the upstream Python trainer requires Python >=3.10")
     upstream = cli.upstream.resolve()
     runtime_context = isolated_runtime(
-        upstream, patches=[ROLLOUT_BOUNDARY_PATCH],
+        upstream, patches=[ROLLOUT_BOUNDARY_PATCH, REWARD_CLIPPING_PATCH],
     )
     runtime = runtime_context.__enter__()
     sys.path.insert(0, str(runtime))
@@ -96,7 +96,7 @@ def main():
     args["policy"].update(hidden_size=32, num_layers=1)
     args["torch"]["network"] = "MLP"
     args["train"].update(horizon=12, minibatch_size=168, total_timesteps=336,
-                         replay_ratio=1.0, learning_rate=0.001)
+                         replay_ratio=1.0, learning_rate=0.001, clip_rewards=False)
     vec = backend.create_vec(args, 0)
     trainer = None
     try:
@@ -108,7 +108,7 @@ def main():
         trainer = PuffeRL(args, vec, policy, verbose=False)
         initial = {name: value.detach().clone() for name, value in policy.named_parameters()}
         reward_total = 0.0
-        clipped_reward_count = 0
+        outside_unit_range_count = 0
         batch_boundaries = []
         epochs = []
         for _ in range(2):
@@ -133,7 +133,7 @@ def main():
             if not torch.all((rollout_actions == 0) | ((rollout_actions == 61) & is_winter)):
                 raise RuntimeError("smoke policy used an action outside its stated restriction")
             reward_total += trainer.rewards.sum().item()
-            clipped_reward_count += (trainer.rewards.abs() > 1).sum().item()
+            outside_unit_range_count += (trainer.rewards.abs() > 1).sum().item()
             trainer.train()
             if not all(torch.isfinite(torch.tensor(value)).item() for value in trainer.losses.values()):
                 raise RuntimeError(f"non-finite losses: {trainer.losses}")
@@ -161,17 +161,19 @@ def main():
         print(json.dumps({
             "upstream_commit": PIN, "python": sys.version.split()[0],
             "torch": torch.__version__, "network": "MLP", "device": trainer.device,
-            "runtime_patches": [ROLLOUT_BOUNDARY_PATCH.name],
+            "runtime_patches": [ROLLOUT_BOUNDARY_PATCH.name, REWARD_CLIPPING_PATCH.name],
             "steps": trainer.global_step, "stored_rollout_reward_sum": reward_total,
             "batch_boundaries": batch_boundaries,
             "final_pending_reward_sum": trainer.vec_rewards.sum().item(),
             "final_pending_terminal_count": trainer.vec_terminals.sum().item(),
-            "reward_entries_clipped_by_upstream_trainer": clipped_reward_count,
+            "stored_reward_entries_outside_unit_range": outside_unit_range_count,
+            "clip_rewards": trainer.clip_rewards,
             "changed_parameter_tensors": changed, "checkpoint_prediction_match": True,
             "config": {key: args[key] for key in ["vec", "env", "policy", "torch", "train"]},
             "losses": epochs,
             "limitations": ["restricted HOLD-or-Winter-DISBAND policy with initial bias, not a learned baseline",
-                "incomplete actions and existing game defects", "upstream reward clipping",
+                "incomplete actions and existing game defects",
+                "native GPU reward clipping is unchanged and untested",
                 "the final environment transition remains pending until the next rollout",
                 "the upstream advantage update does not consume a carried first-row reward",
                 "no recurrent, GPU, opponent-pool or full training-resume check"],

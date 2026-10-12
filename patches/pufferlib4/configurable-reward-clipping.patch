@@ -1,0 +1,13 @@
+diff --git a/pufferlib/torch_pufferl.py b/pufferlib/torch_pufferl.py
+--- a/pufferlib/torch_pufferl.py
++++ b/pufferlib/torch_pufferl.py
+@@ -116,1 +116,4 @@
+         config = args['train']
++        self.clip_rewards = config.get('clip_rewards', True)
++        if type(self.clip_rewards) is not bool:
++            raise TypeError('clip_rewards must be a boolean')
+@@ -278,1 +281,3 @@
+-        rew = self.rewards.T.contiguous().clamp(-1, 1)
++        rew = self.rewards.T.contiguous()
++        if self.clip_rewards:
++            rew = rew.clamp(-1, 1)
