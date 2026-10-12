@@ -1,7 +1,6 @@
 """Regression for rewards and terminals at Torch rollout batch boundaries."""
 from pathlib import Path
 import sys
-import types
 import unittest
 
 import numpy as np
@@ -104,13 +103,6 @@ def collect(PuffeRL, horizons):
 class RolloutBoundaryTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import pufferlib
-        backend = types.ModuleType("pufferlib._C")
-        backend.precision_bytes = 4
-        backend.gpu = 0
-        backend.get_utilization = lambda _device: {}
-        pufferlib._C = backend
-        sys.modules["pufferlib._C"] = backend
         from pufferlib.torch_pufferl import PuffeRL
         cls.batched = collect(PuffeRL, (3, 3))
         cls.uninterrupted = collect(PuffeRL, (6,))
