@@ -29,13 +29,29 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements/diplomacy-test.txt
+          cache-dependency-path: |
+            requirements/diplomacy-test.txt
+            requirements/pufferlib4-test.txt
+
+      - name: Check out pinned PufferLib 4 source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: PufferAI/PufferLib
+          ref: 42f70d6932c30ac977736f861006809c50168ba9
+          path: build/pufferlib4-upstream
+          persist-credentials: false
+
+      - name: Install native CPU build tools
+        run: sudo apt-get update && sudo apt-get install -y clang libomp-dev
 
       - name: Install focused test dependencies
-        run: python -m pip install -r requirements/diplomacy-test.txt
+        run: python -m pip install -r requirements/pufferlib4-test.txt
 
       - name: Build Diplomacy extension
         run: python scripts/build_diplomacy_ext.py build_ext --inplace
+
+      - name: Build PufferLib 4 CPU environment backend
+        run: python scripts/build_diplomacy_puffer4.py --upstream build/pufferlib4-upstream
 
       - name: Run Diplomacy regression suite
         run: >-

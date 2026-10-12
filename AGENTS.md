@@ -64,11 +64,16 @@ Keep shared rules here; tool-specific entry files must only point to them.
 ## Build and test
 
 ```bash
-python -m pip install -r requirements/diplomacy-test.txt
+python -m pip install -r requirements/pufferlib4-test.txt
 python scripts/build_diplomacy_ext.py build_ext --inplace
+python scripts/build_diplomacy_puffer4.py --upstream <pinned-upstream-checkout>
 python -m pytest tests/diplomacy/c_tests tests/diplomacy/original/test_datc.py tests/test_diplomacy.py tests/test_agent_worktree.py -q
 ```
 
 Run the relevant test first, then the full command above. Report the command,
 commit, Python version, platform, and passed/failed/errored/skipped counts.
 If a check cannot run, say why and leave it listed as unfinished.
+
+Read `docs/development/pufferlib-4-migration.md` for the upstream pin, native
+build prerequisites, staged migration, and checks that are not yet available.
+The CPU environment adapter is not a completed trainer/package migration.
