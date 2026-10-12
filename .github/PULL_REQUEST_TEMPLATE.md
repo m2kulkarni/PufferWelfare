@@ -33,5 +33,7 @@ they exist. Do not write "none" merely because the tests pass.
 
 If both agents share an account, use a COMMENT review and say so.
 Either Codex, Claude Code, or another collaborator can author or review.
-Keep the pilot PR draft until the owner has read it, discussed it, and approved.
+Keep the PR draft until the current commit passes independent review, CI, and
+the readiness check in AGENTS.md. Then mark it ready for the owner's review.
+Record the checked commit. A new commit returns it to draft until checked again.
 Agents must not merge without explicit human approval.
