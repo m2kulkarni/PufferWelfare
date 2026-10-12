@@ -1,0 +1,42 @@
+diff --git a/pufferlib/torch_pufferl.py b/pufferlib/torch_pufferl.py
+--- a/pufferlib/torch_pufferl.py
++++ b/pufferlib/torch_pufferl.py
+@@ -160,1 +160,4 @@
+         self.terminals = torch.zeros(horizon, total_agents, device=device)
++        self.bootstrap_values = torch.zeros(total_agents, device=device)
++        self.bootstrap_rewards = torch.zeros(total_agents, device=device)
++        self.bootstrap_terminals = torch.zeros(total_agents, device=device)
+@@ -250,0 +254,11 @@
++        # No extra action: keep the final transition and query its next state.
++        # Clone buffers and state so neither the next rollout nor this query
++        # can overwrite the sampled rollout's data or recurrent state.
++        with torch.no_grad():
++            self.bootstrap_rewards = self.vec_rewards.to(device).clone()
++            self.bootstrap_terminals = self.vec_terminals.to(device).clone()
++            bootstrap_state = tuple(s.clone() for s in self.state)
++            _, bootstrap_value, _ = self.policy.forward_eval(
++                self.vec_obs.to(device), bootstrap_state)
++            self.bootstrap_values = bootstrap_value.flatten().clone()
++
+@@ -281,1 +295,2 @@
+-        rew = self.rewards.T.contiguous()
++        rew = torch.cat((self.rewards.T,
++            self.bootstrap_rewards[:, None]), dim=1).contiguous()
+@@ -284,1 +299,2 @@
+-        ter = self.terminals.T.contiguous()
++        ter = torch.cat((self.terminals.T,
++            self.bootstrap_terminals[:, None]), dim=1).contiguous()
+@@ -290,5 +306,9 @@
+-            shape = val.shape
+-            advantages = torch.zeros(shape, device=device)
+-            advantages = compute_puff_advantage(val, rew,
+-                ter, self.ratio, advantages, config['gamma'],
++            bootstrap_val = torch.cat((val,
++                self.bootstrap_values[:, None]), dim=1).contiguous()
++            bootstrap_ratio = torch.cat((self.ratio,
++                torch.ones(self.total_agents, 1, device=device)), dim=1)
++            advantages = torch.zeros_like(bootstrap_val)
++            advantages = compute_puff_advantage(bootstrap_val, rew,
++                ter, bootstrap_ratio, advantages, config['gamma'],
+                 config['gae_lambda'], config['vtrace_rho_clip'], config['vtrace_c_clip'])
++            advantages = advantages[:, :-1]

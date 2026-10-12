@@ -17,14 +17,14 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from pufferlib4_runtime import REWARD_CLIPPING_PATCH, ROLLOUT_BOUNDARY_PATCH, isolated_runtime
+from pufferlib4_runtime import FINAL_ACTION_PATCH, REWARD_CLIPPING_PATCH, ROLLOUT_BOUNDARY_PATCH, isolated_runtime
 
 
 class RewardClippingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.runtime_context = isolated_runtime(
-            UPSTREAM, patches=[ROLLOUT_BOUNDARY_PATCH, REWARD_CLIPPING_PATCH])
+            UPSTREAM, patches=[ROLLOUT_BOUNDARY_PATCH, REWARD_CLIPPING_PATCH, FINAL_ACTION_PATCH])
         cls.runtime = cls.runtime_context.__enter__()
         sys.path.insert(0, str(cls.runtime))
         import pufferlib
@@ -86,6 +86,12 @@ class RewardClippingTest(unittest.TestCase):
             trainer.rewards.copy_(rewards)
             trainer.values.zero_()
             trainer.terminals.fill_(1)
+            # The extra row contains the final action's transition, not a
+            # fifth sampled action. Check its clipping bounds explicitly too.
+            final_reward = -5 * torch.arange(1, 8, dtype=torch.float32)
+            trainer.bootstrap_rewards.copy_(final_reward)
+            trainer.bootstrap_values.zero_()
+            trainer.bootstrap_terminals.fill_(1)
             trainer.actions.zero_()
             with torch.no_grad():
                 logits, _ = policy(trainer.observations.transpose(0, 1).contiguous())
@@ -112,7 +118,9 @@ class RewardClippingTest(unittest.TestCase):
             self.assertEqual(len(observations), 1)
             self.assertEqual(len(compiled_calls), 1)
             torch.testing.assert_close(trainer.rewards, rewards, rtol=0, atol=0)
-            return rewards.T.contiguous(), observations[0]
+            torch.testing.assert_close(trainer.bootstrap_rewards, final_reward, rtol=0, atol=0)
+            raw = torch.cat((rewards.T, final_reward[:, None]), dim=1)
+            return raw, observations[0]
         finally:
             if trainer is not None:
                 trainer.close()
@@ -124,8 +132,8 @@ class RewardClippingTest(unittest.TestCase):
         torch.testing.assert_close(actual, raw, rtol=0, atol=0)
         expected = torch.zeros_like(raw)
         expected[:, :-1] = raw[:, 1:]
-        # This intentionally records current issue19 semantics: the first
-        # reward is not consumed and the final action gets no advantage.
+        # Four actions now consume four following transition rows. Only the
+        # extra bootstrap row (which has no action) has zero advantage.
         torch.testing.assert_close(advantages, expected, rtol=0, atol=0)
 
     def test_missing_or_enabled_preserves_existing_clipping(self):

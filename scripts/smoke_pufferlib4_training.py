@@ -2,8 +2,9 @@
 """Check the pinned PufferLib 4 CPU trainer with explicit local patches.
 
 Run as a separate process: the old package and upstream package share a name.
-The explicit Torch patch preserves welfare reward magnitudes. Actions and
-final-action bootstrapping remain incomplete; this is not a useful baseline.
+The explicit Torch patches preserve welfare reward magnitudes and include the
+final transition in the advantage input. Actions remain restricted; this is not
+a useful baseline or evidence of complete recurrent/GPU training correctness.
 """
 import argparse
 import ast
@@ -15,7 +16,7 @@ import sys
 import sysconfig
 import tempfile
 
-from pufferlib4_runtime import PIN, REWARD_CLIPPING_PATCH, ROLLOUT_BOUNDARY_PATCH, isolated_runtime
+from pufferlib4_runtime import PIN, FINAL_ACTION_PATCH, REWARD_CLIPPING_PATCH, ROLLOUT_BOUNDARY_PATCH, isolated_runtime
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,7 +30,7 @@ def main():
         parser.error("the upstream Python trainer requires Python >=3.10")
     upstream = cli.upstream.resolve()
     runtime_context = isolated_runtime(
-        upstream, patches=[ROLLOUT_BOUNDARY_PATCH, REWARD_CLIPPING_PATCH],
+        upstream, patches=[ROLLOUT_BOUNDARY_PATCH, REWARD_CLIPPING_PATCH, FINAL_ACTION_PATCH],
     )
     runtime = runtime_context.__enter__()
     sys.path.insert(0, str(runtime))
@@ -108,6 +109,7 @@ def main():
         trainer = PuffeRL(args, vec, policy, verbose=False)
         initial = {name: value.detach().clone() for name, value in policy.named_parameters()}
         reward_total = 0.0
+        action_reward_total = 0.0
         outside_unit_range_count = 0
         batch_boundaries = []
         epochs = []
@@ -133,6 +135,12 @@ def main():
             if not torch.all((rollout_actions == 0) | ((rollout_actions == 61) & is_winter)):
                 raise RuntimeError("smoke policy used an action outside its stated restriction")
             reward_total += trainer.rewards.sum().item()
+            if not torch.equal(trainer.bootstrap_rewards, trainer.vec_rewards):
+                raise RuntimeError("final transition reward was not snapshotted")
+            if not torch.equal(trainer.bootstrap_terminals, trainer.vec_terminals):
+                raise RuntimeError("final transition terminal flags were not snapshotted")
+            action_reward_total += (trainer.rewards[1:].sum()
+                                    + trainer.bootstrap_rewards.sum()).item()
             outside_unit_range_count += (trainer.rewards.abs() > 1).sum().item()
             trainer.train()
             if not all(torch.isfinite(torch.tensor(value)).item() for value in trainer.losses.values()):
@@ -161,8 +169,9 @@ def main():
         print(json.dumps({
             "upstream_commit": PIN, "python": sys.version.split()[0],
             "torch": torch.__version__, "network": "MLP", "device": trainer.device,
-            "runtime_patches": [ROLLOUT_BOUNDARY_PATCH.name, REWARD_CLIPPING_PATCH.name],
+            "runtime_patches": [ROLLOUT_BOUNDARY_PATCH.name, REWARD_CLIPPING_PATCH.name, FINAL_ACTION_PATCH.name],
             "steps": trainer.global_step, "stored_rollout_reward_sum": reward_total,
+            "sampled_action_reward_sum": action_reward_total,
             "batch_boundaries": batch_boundaries,
             "final_pending_reward_sum": trainer.vec_rewards.sum().item(),
             "final_pending_terminal_count": trainer.vec_terminals.sum().item(),
@@ -174,8 +183,8 @@ def main():
             "limitations": ["restricted HOLD-or-Winter-DISBAND policy with initial bias, not a learned baseline",
                 "incomplete actions and existing game defects",
                 "native GPU reward clipping is unchanged and untested",
-                "the final environment transition remains pending until the next rollout",
-                "the upstream advantage update does not consume a carried first-row reward",
+                "the final transition is included through an extra value-only row; no extra action is sampled",
+                "split/uninterrupted numerical equivalence is tested only with feedforward state and lambda zero",
                 "no recurrent, GPU, opponent-pool or full training-resume check"],
         }, indent=2))
     finally:

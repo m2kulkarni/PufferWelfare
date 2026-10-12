@@ -16,6 +16,7 @@ PIN = "42f70d6932c30ac977736f861006809c50168ba9"
 ROOT = Path(__file__).resolve().parents[1]
 ROLLOUT_BOUNDARY_PATCH = ROOT / "patches/pufferlib4/preserve-rollout-boundaries.patch"
 REWARD_CLIPPING_PATCH = ROOT / "patches/pufferlib4/configurable-reward-clipping.patch"
+FINAL_ACTION_PATCH = ROOT / "patches/pufferlib4/final-action-bootstrap.patch"
 
 
 def _pinned_archive(upstream):

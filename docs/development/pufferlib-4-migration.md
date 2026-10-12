@@ -211,6 +211,7 @@ parity test has been run, and the CPU setting is not a claim that native trainin
 supports it. Unclipped reward magnitudes can change optimization stability;
 the smoke test is not evidence of long-run learning performance.
 
+The following records the boundary-only fix before the final-action patch below.
 A deterministic two-batch regression reproduced the boundary bug
 before the local patch: two checks failed and the initial-reset check passed.
 The first row of batch two had lost transition three's rewards and terminal flags.
@@ -230,8 +231,48 @@ follows from the pinned CPU source and a direct binding probe: with rewards
 returned advantages `[1, 2, 3, 0]`. The smoke run itself does not measure an
 advantage attributable to the carried reward. Correct bootstrapping/last-action
 learning is tracked separately in
-[#19](https://github.com/m2kulkarni/PufferWelfare/issues/19); it needs its own
-regression and may require a broader trainer change.
+[#19](https://github.com/m2kulkarni/PufferWelfare/issues/19).
+
+## Final-action patch (issue #19)
+
+The temporary Torch runtime now supplies one extra row to the actual compiled
+advantage function. It contains the reward and terminal flag from the last
+sampled action, plus the value of its following observation. The function's
+existing terminal mask prevents bootstrapping into an automatically reset game.
+The extra row has no sampled action: only the original `horizon` actions enter
+the policy update, minibatch sizing, or step count. Reward clipping, when enabled,
+also applies to this final reward. No scoring or adjudication rule changes.
+
+The extra value query runs without gradients on cloned recurrent state, and its
+returned state is discarded. Reward, terminal, and value snapshots own their
+storage. This prevents that query or subsequent environment steps from mutating
+the stored rollout; it does not fix upstream's recurrent resets between batches
+or establish correct MinGRU episode handling.
+
+Run the numerical check in the separate training environment:
+
+```bash
+python tests/test_pufferlib4_final_action_bootstrap.py --upstream /path/to/PufferLib-4-source
+```
+
+It delegates to the real compiled CPU function and compares final-action rewards,
+nonterminal values, and terminal cutoffs against an explicit numerical oracle.
+Split and uninterrupted collection are compared with feedforward state and
+lambda zero, where equal advantages are expected. With nonzero lambda, a batch
+boundary cuts the future trace; general split/uninterrupted equality is not
+claimed. Additional checks cover a one-action horizon, snapshot ownership, and
+discarding mutations to the extra query's cloned state. The clipping fixture now
+includes an explicit fifth, bootstrap-only reward row, retaining exact numerical
+expectations rather than preserving the old zero-final-action defect.
+
+Author: Codex session root, continuing the initial regression and design from
+session governance_audit after that session reported an account usage limit.
+The initial regression had four failures across three test methods before the
+patch. The first patch attempt had a malformed hunk count and failed to apply;
+correcting the patch format did not change the expected numerical results.
+Independent review and current-commit Linux CI remain required. This is still
+an isolated CPU pilot, not the default package or a completed migration.
+
 Native GPU reward clipping, MinGRU episode resets, long-run binding leaks, GPU behavior,
 historical opponents, and full optimizer/RNG checkpoint resume also still need
 focused tests. Do not turn this smoke script into the default training entry
