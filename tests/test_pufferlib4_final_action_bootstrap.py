@@ -3,13 +3,10 @@
 Run separately from the old package's test process with Python >=3.10. The
 fixtures are transition-interface values, not Welfare Diplomacy rule examples.
 """
-import argparse
 import ast
 import configparser
-import importlib.util
 from pathlib import Path
 import sys
-import sysconfig
 import unittest
 from unittest.mock import patch
 
@@ -18,13 +15,7 @@ import torch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-from pufferlib4_runtime import (  # noqa: E402
-    FINAL_ACTION_PATCH,
-    REWARD_CLIPPING_PATCH,
-    ROLLOUT_BOUNDARY_PATCH,
-    isolated_runtime,
-)
+sys.path.insert(0, str(ROOT))
 
 
 class DeterministicVec:
@@ -108,32 +99,16 @@ def oracle(values, rewards, terminals, gamma, gae_lambda):
 class FinalActionBootstrapTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.runtime_context = isolated_runtime(
-            UPSTREAM,
-            patches=[ROLLOUT_BOUNDARY_PATCH, REWARD_CLIPPING_PATCH, FINAL_ACTION_PATCH],
-        )
-        cls.runtime = cls.runtime_context.__enter__()
-        sys.path.insert(0, str(cls.runtime))
-        import pufferlib
-
-        extension = ROOT / "build/pufferlib4" / ("_C" + sysconfig.get_config_var("EXT_SUFFIX"))
-        spec = importlib.util.spec_from_file_location("pufferlib._C", extension)
-        cls.backend = importlib.util.module_from_spec(spec)
-        sys.modules["pufferlib._C"] = cls.backend
-        spec.loader.exec_module(cls.backend)
-        pufferlib._C = cls.backend
+        from pufferlib import _C
+        cls.backend = _C
         import pufferlib.torch_pufferl
 
         cls.module = pufferlib.torch_pufferl
         torch.set_num_threads(1)
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.runtime_context.__exit__(None, None, None)
-
     def args(self, horizon, gamma, gae_lambda):
         config = configparser.ConfigParser()
-        config.read(self.runtime / "config/default.ini")
+        config.read(ROOT / "config/default.ini")
         args = {}
         for section in config.sections():
             values = {}
@@ -306,7 +281,4 @@ class FinalActionBootstrapTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--upstream", type=Path, required=True)
-    UPSTREAM = parser.parse_args().upstream.resolve()
-    unittest.main(argv=[sys.argv[0]])
+    unittest.main()

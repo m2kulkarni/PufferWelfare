@@ -33,14 +33,6 @@ jobs:
             requirements/diplomacy-test.txt
             requirements/pufferlib4-test.txt
 
-      - name: Check out pinned PufferLib 4 source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: PufferAI/PufferLib
-          ref: 42f70d6932c30ac977736f861006809c50168ba9
-          path: build/pufferlib4-upstream
-          persist-credentials: false
-
       - name: Install native CPU build tools
         run: sudo apt-get update && sudo apt-get install -y clang libomp-dev
 
@@ -51,7 +43,7 @@ jobs:
         run: python scripts/build_diplomacy_ext.py build_ext --inplace
 
       - name: Build PufferLib 4 CPU environment backend
-        run: python scripts/build_diplomacy_puffer4.py --upstream build/pufferlib4-upstream
+        run: python scripts/build_diplomacy_puffer4.py
 
       - name: Run Diplomacy regression suite
         run: >-
@@ -75,14 +67,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check out pinned PufferLib 4 source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: PufferAI/PufferLib
-          ref: 42f70d6932c30ac977736f861006809c50168ba9
-          path: build/pufferlib4-upstream
-          persist-credentials: false
-
       - name: Install CPU training dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y clang libomp-dev
@@ -90,16 +74,16 @@ jobs:
           python -m pip install -r requirements/pufferlib4-train.txt
 
       - name: Build PufferLib 4 CPU environment backend
-        run: python scripts/build_diplomacy_puffer4.py --upstream build/pufferlib4-upstream
+        run: python scripts/build_diplomacy_puffer4.py
 
       - name: Check rollout boundary handoff
-        run: python tests/test_pufferlib4_rollout_boundaries.py --upstream build/pufferlib4-upstream
+        run: python tests/test_pufferlib4_rollout_boundaries.py
 
       - name: Check reward magnitudes at the compiled advantage input
-        run: python tests/test_pufferlib4_reward_clipping.py --upstream build/pufferlib4-upstream
+        run: python tests/test_pufferlib4_reward_clipping.py
 
       - name: Check final-action rewards and next-state values
-        run: python tests/test_pufferlib4_final_action_bootstrap.py --upstream build/pufferlib4-upstream
+        run: python tests/test_pufferlib4_final_action_bootstrap.py
 
       - name: Check actual PufferLib 4 CPU training and weight reload
-        run: python scripts/smoke_pufferlib4_training.py --upstream build/pufferlib4-upstream
+        run: python scripts/smoke_pufferlib4_training.py

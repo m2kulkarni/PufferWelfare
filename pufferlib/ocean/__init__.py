@@ -1,12 +1,5 @@
-from .environment import *
+"""Legacy environment namespace retained for Diplomacy rule-test access.
 
-try:
-    import torch
-except ImportError:
-    pass
-else:
-    from .torch import Policy
-    try:
-        from .torch import Recurrent
-    except:
-        Recurrent = None
+The PufferLib 4 trainer uses pufferlib.models, not the old Ocean Torch policies.
+Import a specific environment explicitly; do not load unrelated 3.0 modules.
+"""

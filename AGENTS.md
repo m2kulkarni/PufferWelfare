@@ -66,7 +66,7 @@ Keep shared rules here; tool-specific entry files must only point to them.
 ```bash
 python -m pip install -r requirements/pufferlib4-test.txt
 python scripts/build_diplomacy_ext.py build_ext --inplace
-python scripts/build_diplomacy_puffer4.py --upstream <pinned-upstream-checkout>
+python scripts/build_diplomacy_puffer4.py
 python -m pytest tests/diplomacy/c_tests tests/diplomacy/original/test_datc.py tests/test_diplomacy.py tests/test_agent_worktree.py -q
 ```
 
@@ -76,4 +76,6 @@ If a check cannot run, say why and leave it listed as unfinished.
 
 Read `docs/development/pufferlib-4-migration.md` for the upstream pin, native
 build prerequisites, staged migration, and checks that are not yet available.
-The CPU environment adapter is not a completed trainer/package migration.
+PufferLib 4 source is checked in and edited directly. Do not add runtime patch
+files or require a separate upstream checkout. Packaging/default installation
+and GPU validation must pass before calling the migration complete.

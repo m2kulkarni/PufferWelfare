@@ -1,32 +1,10 @@
-__version__ = 3.0
+"""PufferLib 4 trainer source with an explicit legacy test-wrapper bridge."""
+__version__ = "4.0.0.dev0"
 
-import os
-path = __path__[0]
-link_to = os.path.join(path, 'resources')
-try:
-    os.symlink(link_to, 'resources')
-except FileExistsError:
-    pass
 
-# Silence noisy dependencies
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-# Silence noisy packages
-import sys
-original_stdout = sys.stdout
-original_stderr = sys.stderr
-sys.stdout = open(os.devnull, 'w')
-sys.stderr = open(os.devnull, 'w')
-try:
-    import gymnasium
-    import pygame
-except ImportError:
-    pass
-sys.stdout.close()
-sys.stderr.close()
-sys.stdout = original_stdout
-sys.stderr = original_stderr
-
-from pufferlib.pufferlib import *
-from pufferlib import environments
+def __getattr__(name):
+    if name == "PufferEnv":
+        # Kept only for the legacy Diplomacy adjudication wrapper.
+        from pufferlib.pufferlib import PufferEnv
+        return PufferEnv
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

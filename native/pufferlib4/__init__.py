@@ -1,8 +1,5 @@
 """Checked Python entry point for the PufferLib 4 CPU environment pilot."""
 import ctypes
-import importlib.util
-from pathlib import Path
-import sysconfig
 
 import numpy as np
 
@@ -15,10 +12,7 @@ MAX_TOTAL_AGENTS = 7 * 4096
 def _load_backend():
     global _backend
     if _backend is None:
-        path = Path(__file__).resolve().parents[2] / "build/pufferlib4" / ("_C" + sysconfig.get_config_var("EXT_SUFFIX"))
-        spec = importlib.util.spec_from_file_location("_C", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        from pufferlib import _C as module
         _backend = module
     return _backend
 

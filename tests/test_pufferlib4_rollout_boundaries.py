@@ -1,5 +1,4 @@
 """Regression for rewards and terminals at Torch rollout batch boundaries."""
-import argparse
 from pathlib import Path
 import sys
 import types
@@ -10,8 +9,7 @@ import torch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-from pufferlib4_runtime import ROLLOUT_BOUNDARY_PATCH, isolated_runtime  # noqa: E402
+sys.path.insert(0, str(ROOT))
 
 
 class DeterministicVec:
@@ -106,9 +104,6 @@ def collect(PuffeRL, horizons):
 class RolloutBoundaryTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.runtime = isolated_runtime(UPSTREAM, patches=[ROLLOUT_BOUNDARY_PATCH])
-        runtime = cls.runtime.__enter__()
-        sys.path.insert(0, str(runtime))
         import pufferlib
         backend = types.ModuleType("pufferlib._C")
         backend.precision_bytes = 4
@@ -119,10 +114,6 @@ class RolloutBoundaryTest(unittest.TestCase):
         from pufferlib.torch_pufferl import PuffeRL
         cls.batched = collect(PuffeRL, (3, 3))
         cls.uninterrupted = collect(PuffeRL, (6,))
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.runtime.__exit__(None, None, None)
 
     def test_reward_stream_matches_uninterrupted_rollout(self):
         torch.testing.assert_close(self.batched[0], self.uninterrupted[0])
@@ -143,8 +134,4 @@ class RolloutBoundaryTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--upstream", type=Path, required=True)
-    args = parser.parse_args()
-    UPSTREAM = args.upstream.resolve()
-    unittest.main(argv=[sys.argv[0]])
+    unittest.main()

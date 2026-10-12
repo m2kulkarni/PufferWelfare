@@ -1,48 +1,32 @@
 #!/usr/bin/env python3
-"""Check the pinned PufferLib 4 CPU trainer with explicit local patches.
+"""Check the local PufferLib 4 CPU trainer.
 
-Run as a separate process: the old package and upstream package share a name.
-The explicit Torch patches preserve welfare reward magnitudes and include the
+The trainer preserves welfare reward magnitudes and includes the
 final transition in the advantage input. Actions remain restricted; this is not
 a useful baseline or evidence of complete recurrent/GPU training correctness.
 """
 import argparse
 import ast
 import configparser
-import importlib.util
 import json
 from pathlib import Path
 import sys
-import sysconfig
 import tempfile
 
-from pufferlib4_runtime import PIN, FINAL_ACTION_PATCH, REWARD_CLIPPING_PATCH, ROLLOUT_BOUNDARY_PATCH, isolated_runtime
-
-
 ROOT = Path(__file__).resolve().parents[1]
+PIN = "42f70d6932c30ac977736f861006809c50168ba9"
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--upstream", type=Path, required=True)
-    cli = parser.parse_args()
+    parser.parse_args()
     if sys.version_info < (3, 10):
         parser.error("the upstream Python trainer requires Python >=3.10")
-    upstream = cli.upstream.resolve()
-    runtime_context = isolated_runtime(
-        upstream, patches=[ROLLOUT_BOUNDARY_PATCH, REWARD_CLIPPING_PATCH, FINAL_ACTION_PATCH],
-    )
-    runtime = runtime_context.__enter__()
-    sys.path.insert(0, str(runtime))
+    sys.path.insert(0, str(ROOT))
     import pufferlib
-    if Path(pufferlib.__file__).resolve() != runtime / "pufferlib/__init__.py":
-        raise RuntimeError("imported outside the isolated pinned PufferLib 4 runtime")
-    extension = ROOT / "build/pufferlib4" / ("_C" + sysconfig.get_config_var("EXT_SUFFIX"))
-    spec = importlib.util.spec_from_file_location("pufferlib._C", extension)
-    backend = importlib.util.module_from_spec(spec)
-    sys.modules["pufferlib._C"] = backend
-    spec.loader.exec_module(backend)
-    pufferlib._C = backend
+    if Path(pufferlib.__file__).resolve() != ROOT / "pufferlib/__init__.py":
+        raise RuntimeError("imported outside this repository's PufferLib 4 source")
+    from pufferlib import _C as backend
     import torch
     from pufferlib.torch_pufferl import PuffeRL, load_policy
 
@@ -78,7 +62,7 @@ def main():
     torch.set_num_threads(1)
     torch.manual_seed(42)
     cfg = configparser.ConfigParser()
-    cfg.read(runtime / "config/default.ini")
+    cfg.read(ROOT / "config/default.ini")
     args = {}
     for section in cfg.sections():
         values = {}
@@ -169,7 +153,7 @@ def main():
         print(json.dumps({
             "upstream_commit": PIN, "python": sys.version.split()[0],
             "torch": torch.__version__, "network": "MLP", "device": trainer.device,
-            "runtime_patches": [ROLLOUT_BOUNDARY_PATCH.name, REWARD_CLIPPING_PATCH.name, FINAL_ACTION_PATCH.name],
+            "trainer_source": "pufferlib/torch_pufferl.py",
             "steps": trainer.global_step, "stored_rollout_reward_sum": reward_total,
             "sampled_action_reward_sum": action_reward_total,
             "batch_boundaries": batch_boundaries,
@@ -188,13 +172,10 @@ def main():
                 "no recurrent, GPU, opponent-pool or full training-resume check"],
         }, indent=2))
     finally:
-        try:
-            if trainer is not None:
-                trainer.close()
-            else:
-                vec.close()
-        finally:
-            runtime_context.__exit__(None, None, None)
+        if trainer is not None:
+            trainer.close()
+        else:
+            vec.close()
 
 
 if __name__ == "__main__":
