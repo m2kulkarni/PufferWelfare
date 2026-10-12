@@ -1,0 +1,9 @@
+diff --git a/pufferlib/torch_pufferl.py b/pufferlib/torch_pufferl.py
+--- a/pufferlib/torch_pufferl.py
++++ b/pufferlib/torch_pufferl.py
+@@ -211,2 +211,3 @@
+-        r = torch.zeros(self.total_agents, device=device)
+-        d = torch.zeros(self.total_agents, device=device)
++        # Preserve the transition produced by the preceding rollout's final step.
++        r = self.vec_rewards
++        d = self.vec_terminals

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the real pinned PufferLib 4 CPU trainer, not learning performance.
+"""Check the pinned PufferLib 4 CPU trainer with explicit local patches.
 
 Run as a separate process: the old package and upstream package share a name.
 The upstream trainer clips rewards and does not mask our incomplete actions.
@@ -11,16 +11,14 @@ import configparser
 import importlib.util
 import json
 from pathlib import Path
-import subprocess
 import sys
 import sysconfig
 import tempfile
 
-PIN = "42f70d6932c30ac977736f861006809c50168ba9"
+from pufferlib4_runtime import PIN, ROLLOUT_BOUNDARY_PATCH, isolated_runtime
+
+
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ["pufferlib/__init__.py", "pufferlib/pufferl.py", "pufferlib/selfplay.py",
-         "pufferlib/torch_pufferl.py", "pufferlib/models.py", "pufferlib/muon.py",
-         "config/default.ini"]
 
 
 def main():
@@ -30,14 +28,14 @@ def main():
     if sys.version_info < (3, 10):
         parser.error("the upstream Python trainer requires Python >=3.10")
     upstream = cli.upstream.resolve()
-    for name in FILES:
-        pinned = subprocess.check_output(["git", "-C", str(upstream), "show", f"{PIN}:{name}"])
-        if (upstream / name).read_bytes() != pinned:
-            parser.error(f"{name} differs from the pinned upstream source")
-    sys.path.insert(0, str(upstream))
+    runtime_context = isolated_runtime(
+        upstream, patches=[ROLLOUT_BOUNDARY_PATCH],
+    )
+    runtime = runtime_context.__enter__()
+    sys.path.insert(0, str(runtime))
     import pufferlib
-    if Path(pufferlib.__file__).resolve() != upstream / "pufferlib/__init__.py":
-        raise RuntimeError("imported the old package instead of pinned PufferLib 4")
+    if Path(pufferlib.__file__).resolve() != runtime / "pufferlib/__init__.py":
+        raise RuntimeError("imported outside the isolated pinned PufferLib 4 runtime")
     extension = ROOT / "build/pufferlib4" / ("_C" + sysconfig.get_config_var("EXT_SUFFIX"))
     spec = importlib.util.spec_from_file_location("pufferlib._C", extension)
     backend = importlib.util.module_from_spec(spec)
@@ -79,7 +77,7 @@ def main():
     torch.set_num_threads(1)
     torch.manual_seed(42)
     cfg = configparser.ConfigParser()
-    cfg.read(upstream / "config/default.ini")
+    cfg.read(runtime / "config/default.ini")
     args = {}
     for section in cfg.sections():
         values = {}
@@ -117,11 +115,18 @@ def main():
             pending_rewards = trainer.vec_rewards.clone()
             pending_terminals = trainer.vec_terminals.clone()
             trainer.rollouts()
+            first_rewards = trainer.rewards[0]
+            first_terminals = trainer.terminals[0]
+            if not torch.equal(first_rewards, pending_rewards):
+                raise RuntimeError("rollout dropped pending rewards at its first row")
+            if not torch.equal(first_terminals, pending_terminals):
+                raise RuntimeError("rollout dropped pending terminals at its first row")
             batch_boundaries.append({
                 "pending_reward_sum": pending_rewards.sum().item(),
-                "stored_first_row_reward_sum": trainer.rewards[0].sum().item(),
+                "stored_first_row_reward_sum": first_rewards.sum().item(),
                 "pending_terminal_count": pending_terminals.sum().item(),
-                "stored_first_row_terminal_count": trainer.terminals[0].sum().item(),
+                "stored_first_row_terminal_count": first_terminals.sum().item(),
+                "handoff_matches": True,
             })
             is_winter = trainer.observations[:, :, 1624] == 1
             rollout_actions = trainer.actions[:, :, 0]
@@ -156,6 +161,7 @@ def main():
         print(json.dumps({
             "upstream_commit": PIN, "python": sys.version.split()[0],
             "torch": torch.__version__, "network": "MLP", "device": trainer.device,
+            "runtime_patches": [ROLLOUT_BOUNDARY_PATCH.name],
             "steps": trainer.global_step, "stored_rollout_reward_sum": reward_total,
             "batch_boundaries": batch_boundaries,
             "final_pending_reward_sum": trainer.vec_rewards.sum().item(),
@@ -166,14 +172,18 @@ def main():
             "losses": epochs,
             "limitations": ["restricted HOLD-or-Winter-DISBAND policy with initial bias, not a learned baseline",
                 "incomplete actions and existing game defects", "upstream reward clipping",
-                "upstream drops pending rewards and terminals between rollout batches",
+                "the final environment transition remains pending until the next rollout",
+                "the upstream advantage update does not consume a carried first-row reward",
                 "no recurrent, GPU, opponent-pool or full training-resume check"],
         }, indent=2))
     finally:
-        if trainer is not None:
-            trainer.close()
-        else:
-            vec.close()
+        try:
+            if trainer is not None:
+                trainer.close()
+            else:
+                vec.close()
+        finally:
+            runtime_context.__exit__(None, None, None)
 
 
 if __name__ == "__main__":

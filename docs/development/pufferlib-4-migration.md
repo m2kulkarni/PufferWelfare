@@ -131,15 +131,17 @@ run 38182492879 (247 passed, 46 skipped). The Winter reward fix passed run
 
 ## CPU training check
 
-Use a separate virtual environment with Python >=3.10. This script imports the
-pinned upstream Python files, verifies their bytes, and loads the native adapter
-under that package. It does not overwrite either checkout's Python package.
-Use a separate process so old and new packages cannot accidentally share imports.
+Use a separate virtual environment with Python >=3.10. The runtime helper
+archives the exact pinned Git object into a temporary directory and applies the
+explicit local patches there before loading the native adapter under that
+package. It does not alter either checkout. Use a separate process so old and
+new packages cannot accidentally share imports.
 
 ```bash
 python -m pip install -r requirements/pufferlib4-train.txt
 # macOS: use --torch-openmp to share Torch's bundled OpenMP runtime.
 python scripts/build_diplomacy_puffer4.py --upstream /path/to/PufferLib-4-source --torch-openmp
+python tests/test_pufferlib4_rollout_boundaries.py --upstream /path/to/PufferLib-4-source
 python scripts/smoke_pufferlib4_training.py --upstream /path/to/PufferLib-4-source
 ```
 
@@ -170,14 +172,28 @@ CI/review re-checks after changes.
 
 Important limits: upstream clips rewards to [-1, 1], so this is not yet a faithful
 optimizer of cumulative welfare. The script reports how many reward entries that
-would change. Independent review also reproduced a dropped-batch-boundary bug:
-upstream starts each rollout with zero rewards/terminals. Before the second batch,
-22 pending reward points and 14 terminal flags were discarded; another 24 reward
-points and 14 flags remained after the last batch. The reported 103 is stored
-rollout rewards, not all environment-step rewards. The script now labels it
-accordingly and reports each boundary and the final pending values. Fixing this
-trainer defect is a separate task, not a result established by a passing smoke run.
-MinGRU episode resets, long-run binding leaks, GPU behavior, historical opponents,
-and full optimizer/RNG
-checkpoint resume still need focused tests. Do not turn this smoke script into
-the default training entry point without resolving those issues.
+would change. A deterministic two-batch regression reproduced the boundary bug
+before the local patch: two checks failed and the initial-reset check passed.
+The first row of batch two had lost transition three's rewards and terminal flags.
+After the patch, all three checks pass and the two-batch transition stream matches
+one uninterrupted rollout. The real smoke run now carries 22 pending reward
+points and 14 terminal flags into batch two; its stored reward total rises from
+103 to 125. Another 24 reward points and 14 flags remain pending after the final
+batch, as there is no following rollout in which to store them.
+
+This is a stream-preservation fix, not evidence that every boundary transition
+now contributes to learning. Upstream's CPU advantage calculation iterates only
+through `horizon - 2` and assigns `rewards[t + 1]` to action `t`. Consequently,
+the carried first-row reward is not consumed by that batch's update, while the
+preceding batch's final action/value row is no longer available. That conclusion
+follows from the pinned CPU source and a direct binding probe: with rewards
+`[99, 1, 2, 3]`, zero values and `gamma = lambda = 0`, the actual function
+returned advantages `[1, 2, 3, 0]`. The smoke run itself does not measure an
+advantage attributable to the carried reward. Correct bootstrapping/last-action
+learning is tracked separately in
+[#19](https://github.com/m2kulkarni/PufferWelfare/issues/19); it needs its own
+regression and may require a broader trainer change.
+Reward clipping, MinGRU episode resets, long-run binding leaks, GPU behavior,
+historical opponents, and full optimizer/RNG checkpoint resume also still need
+focused tests. Do not turn this smoke script into the default training entry
+point without resolving those issues.

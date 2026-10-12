@@ -92,5 +92,8 @@ jobs:
       - name: Build PufferLib 4 CPU environment backend
         run: python scripts/build_diplomacy_puffer4.py --upstream build/pufferlib4-upstream
 
+      - name: Check rollout boundary handoff
+        run: python tests/test_pufferlib4_rollout_boundaries.py --upstream build/pufferlib4-upstream
+
       - name: Check actual PufferLib 4 CPU training and weight reload
         run: python scripts/smoke_pufferlib4_training.py --upstream build/pufferlib4-upstream
