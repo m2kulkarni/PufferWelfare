@@ -72,9 +72,22 @@ jobs:
           sudo apt-get update && sudo apt-get install -y clang libomp-dev
           python -m pip install torch==2.9.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements/pufferlib4-train.txt
+          python -m pip install -r requirements/pufferlib4-test.txt
 
       - name: Build PufferLib 4 CPU environment backend
         run: python scripts/build_diplomacy_puffer4.py
+
+      - name: Build the retained adjudication test binding with Torch installed
+        run: python scripts/build_diplomacy_ext.py build_ext --inplace
+
+      - name: Check retained rule tests in the PufferLib 4 training environment
+        run: >-
+          python -m pytest
+          tests/diplomacy/c_tests
+          tests/diplomacy/original/test_datc.py
+          tests/test_diplomacy.py
+          tests/test_agent_worktree.py
+          -q
 
       - name: Check rollout boundary handoff
         run: python tests/test_pufferlib4_rollout_boundaries.py
