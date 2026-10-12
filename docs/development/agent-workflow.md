@@ -54,9 +54,15 @@ Discovery follows the documented conventions for
    review that starts with the problems found.
 5. The author resolves findings. The same reviewer re-checks; if two review rounds fail to resolve a problem,
    explain what is stuck and ask the owner for direction.
-6. CI must pass. A human reviews every pilot PR and any sensitive change, discusses it with the author, and explicitly approves before
-   the merge. The orchestrator archives/removes the worktree only after
-   merge.
+6. Before marking ready for human review, check the current commit: independent
+   agent review is complete, current CI passes, blocking findings and review
+   threads are resolved, and the description reports what changed, test results,
+   failures, skips, and unrun checks accurately. Record the checked commit, take
+   the PR out of draft, and notify the owner. If a new commit is added, return it
+   to draft until this check passes again.
+7. A human reads every pilot PR and any sensitive change, discusses it with the
+   author, and explicitly approves before merge. Ready for review does not
+   authorize a merge. Archive/remove the worktree only after merge.
 
 ## GitHub setup stages
 

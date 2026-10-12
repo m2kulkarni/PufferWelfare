@@ -39,8 +39,16 @@ Keep shared rules here; tool-specific entry files must only point to them.
 - A different agent must review the change. Record author and reviewer names.
 - If both agents use the same GitHub account, the reviewer leaves a `COMMENT`
   review. Do not describe it as an independent GitHub approval.
-- During this pilot, the owner will read the entire PR and discuss it before
-  approving. Keep it draft. Do not merge without explicit human approval.
+- Keep a PR draft while writing it or resolving review findings. Before marking
+  it ready for the owner's review, check that a different agent reviewed the
+  current commit, current CI passes, no blocking finding or unresolved review
+  thread remains, and the description accurately reports scope and test evidence.
+  Record the checked commit in the PR, mark it ready for review, and notify the
+  owner. Disclose existing defects, skipped tests, and checks that were not run.
+- If the PR receives a new commit after it was marked ready, return it to draft
+  until the changed commit passes that review check again.
+- Ready for review is not approval to merge. The owner will read the entire PR
+  and discuss it before approving. Do not merge without explicit human approval.
 - Human review is required for game rules, rewards, actions, observations, CI,
   dependencies, agent instructions, permissions, and branch protection.
 
