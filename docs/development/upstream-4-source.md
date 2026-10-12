@@ -16,10 +16,11 @@ source, not files reconstructed or patched during execution:
 Local changes to the imported trainer preserve pending transition data, make
 reward clipping explicit, and include the final-action transition and next-state
 value. Their regressions are unchanged apart from importing local source.
-Trailing whitespace in the imported sweep module and default configuration was
+Trailing whitespace in the imported Muon/sweep modules and default configuration was
 removed. The package initializer is local: it does not import Gym or suppress
 warnings for native training, and lazily exposes the legacy `PufferEnv` only
-when the adjudication wrapper requests it.
+when the adjudication wrapper requests it. The Ocean namespace no longer loads
+old 3.0 Torch policies when accessing the retained Diplomacy wrapper.
 
 The old Diplomacy C engine, regression binding and Python wrapper remain in
 `pufferlib/ocean/diplomacy`. Keeping them preserves independent rule-test access;

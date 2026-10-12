@@ -18,7 +18,7 @@ NS_COEFS = [
     (2.8769, -3.1427, 1.2046),
     (2.8366, -3.0525, 1.2012)
 ]
- 
+
 def zeropower_via_newtonschulz5(G, eps=1e-7):
     G = G.clone()
     x = G
@@ -26,7 +26,7 @@ def zeropower_via_newtonschulz5(G, eps=1e-7):
         x = x.mT
 
     x = x / torch.clamp(G.norm(dim=(-2, -1)), min=eps)
- 
+
     for a, b, c in NS_COEFS:
         s = x @ x.mT
         y = c * s
