@@ -30,6 +30,7 @@ void init_standard_map(Map* map) {
     // Initialize new coast fields for all locations (default: not a coast variant)
     for (int i = 0; i < MAX_LOCATIONS; i++) {
         map->locations[i].parent_location = -1;
+        map->locations[i].is_home_center = -1;
         map->locations[i].coast_type = COAST_NONE;
     }
 
