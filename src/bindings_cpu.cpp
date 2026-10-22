@@ -8,6 +8,7 @@
 #include <cstring>
 #include <memory>
 #include <atomic>
+#include <cmath>
 
 // vecenv.h header section gives us StaticVec, Dict, cudaStream_t typedef
 #include "vecenv.h"
@@ -71,10 +72,17 @@ static void py_puff_advantage_cpu(
 // Dict helpers (same as bindings.cu)
 // ============================================================================
 
-static double get_config(py::dict& kwargs, const char* key) {
+static int integer_config(py::dict kwargs, const char* key, int low, int high) {
     if (!kwargs.contains(key))
-        throw std::runtime_error(std::string("Missing config key: ") + key);
-    return kwargs[key].cast<double>();
+        throw py::value_error(std::string("Missing config key: ") + key);
+    py::handle value = kwargs[key];
+    if (!PyLong_Check(value.ptr()) || PyBool_Check(value.ptr()))
+        throw py::value_error(std::string(key) + " must be an integer");
+    int overflow = 0;
+    long long number = PyLong_AsLongLongAndOverflow(value.ptr(), &overflow);
+    if (overflow || number < low || number > high)
+        throw py::value_error(std::string(key) + " is outside the supported range");
+    return static_cast<int>(number);
 }
 
 static std::atomic<int> live_dicts{0};
@@ -130,11 +138,20 @@ struct VecEnv {
 };
 
 static std::unique_ptr<VecEnv> create_vec(py::dict args, int gpu = 0) {
-    (void)gpu;
+    if (gpu != 0) throw py::value_error("This backend supports CPU only");
     py::dict vec_kwargs = args["vec"].cast<py::dict>();
     py::dict env_kwargs = args["env"].cast<py::dict>();
-    int total_agents = (int)get_config(vec_kwargs, "total_agents");
-    int num_buffers = (int)get_config(vec_kwargs, "num_buffers");
+    // Validate before allocating any engine or binding resources.
+    int total_agents = integer_config(vec_kwargs, "total_agents", 7, 28672);
+    if (total_agents % 7)
+        throw py::value_error("total_agents must contain complete seven-power games");
+    int num_buffers = integer_config(vec_kwargs, "num_buffers", 1, 1);
+    if (env_kwargs.contains("max_years"))
+        integer_config(env_kwargs, "max_years", 1, 1000);
+    if (env_kwargs.contains("welfare_mode")) {
+        py::handle mode = env_kwargs["welfare_mode"];
+        if (!PyBool_Check(mode.ptr())) integer_config(env_kwargs, "welfare_mode", 0, 1);
+    }
     auto vec_dict = py_dict_to_c_dict(vec_kwargs);
     auto env_dict = py_dict_to_c_dict(env_kwargs);
 
