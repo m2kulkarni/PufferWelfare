@@ -4473,6 +4473,7 @@ void c_init(Env* env) {
     if (!map) {
         fprintf(stderr, "Failed to allocate Map\n");
         free(env->game);
+        env->game = NULL;
         return;
     }
 
@@ -4489,6 +4490,7 @@ void c_init(Env* env) {
 }
 
 void c_reset(Env* env) {
+    if (!env->game) return;
     if (env->game) {
         reset_game(env->game);
     }
