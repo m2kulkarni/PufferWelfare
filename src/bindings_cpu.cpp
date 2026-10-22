@@ -61,7 +61,8 @@ static void py_puff_advantage_cpu(
             float r_nxt = rewards[off + t_next];
             float v = values[off + t];
             float v_nxt = values[off + t_next];
-            float delta = rho_t * r_nxt + gamma * v_nxt * nextnonterminal - v;
+            // IMPALA (Espeholt et al., 2018), V-trace TD residual, equation (1).
+            float delta = rho_t * (r_nxt + gamma * v_nxt * nextnonterminal - v);
             lastpufferlam = delta + gamma * lambda * c_t * lastpufferlam * nextnonterminal;
             advantages[off + t] = lastpufferlam;
         }

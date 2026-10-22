@@ -99,7 +99,7 @@ jobs:
         run: python tests/test_pufferlib4_final_action_bootstrap.py
 
       - name: Check CPU vector ownership and close behavior
-        run: python -m pytest tests/test_pufferlib4_lifecycle.py tests/test_pufferlib4_layout.py -q
+        run: python -m pytest tests/test_pufferlib4_lifecycle.py tests/test_pufferlib4_layout.py tests/test_pufferlib4_importance.py -q
 
       - name: Check actual PufferLib 4 CPU training and weight reload
         run: python scripts/smoke_pufferlib4_training.py
