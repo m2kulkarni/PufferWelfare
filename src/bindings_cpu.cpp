@@ -6,6 +6,8 @@
 #define _PUFFER_STRINGIFY(x) #x
 #define PUFFER_STRINGIFY(x) _PUFFER_STRINGIFY(x)
 #include <cstring>
+#include <memory>
+#include <atomic>
 
 // vecenv.h header section gives us StaticVec, Dict, cudaStream_t typedef
 #include "vecenv.h"
@@ -75,11 +77,29 @@ static double get_config(py::dict& kwargs, const char* key) {
     return kwargs[key].cast<double>();
 }
 
-static Dict* py_dict_to_c_dict(py::dict py_dict) {
-    Dict* c_dict = create_dict(py_dict.size());
+static std::atomic<int> live_dicts{0};
+static std::atomic<int> live_vectors{0};
+struct DictDeleter {
+    void operator()(Dict* dict) const noexcept {
+        if (!dict) return;
+        // Keys are borrowed from the Python dictionary, never owned here.
+        free(dict->items);
+        free(dict);
+        --live_dicts;
+    }
+};
+using OwnedDict = std::unique_ptr<Dict, DictDeleter>;
+static OwnedDict owned_dict(int capacity) {
+    OwnedDict result(create_dict(capacity));
+    ++live_dicts;
+    return result;
+}
+static OwnedDict py_dict_to_c_dict(py::dict py_dict) {
+    auto c_dict = owned_dict(py_dict.size());
     for (auto item : py_dict) {
         const char* key = PyUnicode_AsUTF8(item.first.ptr());
-        try { dict_set(c_dict, key, item.second.cast<double>()); }
+        if (!key) throw py::error_already_set();
+        try { dict_set(c_dict.get(), key, item.second.cast<double>()); }
         catch (const py::cast_error&) {}
     }
     return c_dict;
@@ -90,7 +110,17 @@ static Dict* py_dict_to_c_dict(py::dict py_dict) {
 // ============================================================================
 
 struct VecEnv {
-    StaticVec* vec;
+    StaticVec* vec = nullptr;
+    ~VecEnv() { close(); }
+    void close() noexcept {
+        if (!vec) return;
+        static_vec_close(vec);
+        vec = nullptr;
+        --live_vectors;
+    }
+    void require_open() const {
+        if (!vec) throw std::runtime_error("VecEnv is closed");
+    }
     int total_agents;
     int obs_size;
     int num_atns;
@@ -105,13 +135,14 @@ static std::unique_ptr<VecEnv> create_vec(py::dict args, int gpu = 0) {
     py::dict env_kwargs = args["env"].cast<py::dict>();
     int total_agents = (int)get_config(vec_kwargs, "total_agents");
     int num_buffers = (int)get_config(vec_kwargs, "num_buffers");
-    Dict* vec_dict = py_dict_to_c_dict(vec_kwargs);
-    Dict* env_dict = py_dict_to_c_dict(env_kwargs);
+    auto vec_dict = py_dict_to_c_dict(vec_kwargs);
+    auto env_dict = py_dict_to_c_dict(env_kwargs);
 
     auto ve = std::make_unique<VecEnv>();
     {
         py::gil_scoped_release no_gil;
-        ve->vec = create_static_vec(total_agents, num_buffers, 0, vec_dict, env_dict);
+        ve->vec = create_static_vec(total_agents, num_buffers, 0, vec_dict.get(), env_dict.get());
+        if (ve->vec) ++live_vectors;
     }
     ve->total_agents = total_agents;
     ve->obs_size = get_obs_size();
@@ -127,33 +158,31 @@ static std::unique_ptr<VecEnv> create_vec(py::dict args, int gpu = 0) {
 }
 
 static void vec_reset(VecEnv& ve) {
-    py::gil_scoped_release no_gil;
+    ve.require_open();
+    // Keep the GIL: another Python thread must not close during this call.
     static_vec_reset(ve.vec);
 }
 
 static void cpu_vec_step_py(VecEnv& ve, long long actions_ptr) {
+    ve.require_open();
     memcpy(ve.vec->actions, (void*)actions_ptr,
         (size_t)ve.total_agents * ve.num_atns * sizeof(float));
-    {
-        py::gil_scoped_release no_gil;
-        cpu_vec_step(ve.vec);
-    }
+    // The vector can be closed by another Python thread only after this call.
+    cpu_vec_step(ve.vec);
 }
 
 static py::dict vec_log(VecEnv& ve) {
-    Dict* out = create_dict(32);
-    static_vec_log(ve.vec, out);
+    ve.require_open();
+    auto out = owned_dict(32);
+    static_vec_log(ve.vec, out.get());
     py::dict result;
     for (int i = 0; i < out->size; i++)
         result[out->items[i].key] = out->items[i].value;
-    free(out->items);
-    free(out);
     return result;
 }
 
 static void vec_close(VecEnv& ve) {
-    static_vec_close(ve.vec);
-    ve.vec = nullptr;
+    ve.close();
 }
 
 // ============================================================================
@@ -161,6 +190,10 @@ static void vec_close(VecEnv& ve) {
 // ============================================================================
 
 PYBIND11_MODULE(_C, m) {
+    // Private diagnostics count binding-owned resources, not total engine memory.
+    m.def("_resource_counts", []() {
+        return py::make_tuple(live_dicts.load(), live_vectors.load());
+    });
     m.attr("precision_bytes") = 4;
     m.attr("env_name") = PUFFER_STRINGIFY(ENV_NAME);
     m.attr("gpu") = 0;
@@ -176,12 +209,12 @@ PYBIND11_MODULE(_C, m) {
         .def_readonly("obs_dtype", &VecEnv::obs_dtype)
         .def_readonly("obs_elem_size", &VecEnv::obs_elem_size)
         .def_property_readonly("gpu", [](VecEnv&) { return 0; })
-        .def_property_readonly("obs_ptr", [](VecEnv& ve) { return (long long)ve.vec->observations; })
-        .def_property_readonly("rewards_ptr", [](VecEnv& ve) { return (long long)ve.vec->rewards; })
-        .def_property_readonly("terminals_ptr", [](VecEnv& ve) { return (long long)ve.vec->terminals; })
+        .def_property_readonly("obs_ptr", [](VecEnv& ve) { ve.require_open(); return (long long)ve.vec->observations; })
+        .def_property_readonly("rewards_ptr", [](VecEnv& ve) { ve.require_open(); return (long long)ve.vec->rewards; })
+        .def_property_readonly("terminals_ptr", [](VecEnv& ve) { ve.require_open(); return (long long)ve.vec->terminals; })
         .def("reset", &vec_reset)
         .def("cpu_step", &cpu_vec_step_py)
-        .def("render", [](VecEnv& ve, int env_id) { static_vec_render(ve.vec, env_id); })
+        .def("render", [](VecEnv& ve, int env_id) { ve.require_open(); static_vec_render(ve.vec, env_id); })
         .def("log", &vec_log)
         .def("close", &vec_close);
 }
