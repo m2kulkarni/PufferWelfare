@@ -69,7 +69,7 @@ class TestCMap:
         # NOTE: Map data currently has 24 SCs instead of 34 - missing some home centers
         # TODO: Fix map generation to include all 34 SCs
         supply_centers = [loc for loc in locations if loc["is_supply_center"]]
-        assert len(supply_centers) >= 20  # At least 20 SCs marked (relaxed check)
+        assert len(supply_centers) == 34
 
         # Check some known supply centers
         loc_dict = {loc["name"]: loc for loc in locations}
@@ -77,7 +77,6 @@ class TestCMap:
         assert loc_dict["ROM"]["is_supply_center"] == 1
         assert loc_dict["VIE"]["is_supply_center"] == 1
 
-    @pytest.mark.skip(reason="Home center query API not yet implemented")
     def test_home_centers(self):
         """Test that home centers are correctly assigned."""
         env = Diplomacy()
@@ -105,18 +104,21 @@ class TestCMap:
         # English Channel not adjacent to Paris for fleet (pure land)
         assert binding.can_move_names(env.env_handle, 2, "ENG", "PAR") == 0
 
-    @pytest.mark.skip(reason="Adjacency cache query API not yet implemented")
     def test_specific_adjacencies(self):
-        """Test specific known adjacencies from standard map."""
-        # Test cases from DATC:
-        # - Belgium is adjacent to: BUR, ENG, HOL, NTH, PIC, RUH
-        # - Munich is adjacent to: BER, BOH, BUR, KIE, RUH, SIL, TYR, SWI
-        pass
+        env = Diplomacy()
+        try:
+            for dest in ['BUR', 'HOL', 'PIC', 'RUH']:
+                assert binding.can_move_names(env.env_handle, 1, 'BEL', dest)
+            assert not binding.can_move_names(env.env_handle, 1, 'MUN', 'SWI')
+        finally:
+            env.close()
 
-    @pytest.mark.skip(reason="Adjacency cache query API not yet implemented")
     def test_coast_adjacencies(self):
-        """Test that coastal locations have both land and sea adjacencies."""
-        # Constantinople should be adjacent to:
-        # - Land: ANK, BUL
-        # - Sea: AEG, BLA
-        pass
+        env = Diplomacy()
+        try:
+            for dest in ['ANK', 'BUL']:
+                assert binding.can_move_names(env.env_handle, 1, 'CON', dest)
+            for dest in ['AEG', 'BLA']:
+                assert binding.can_move_names(env.env_handle, 2, 'CON', dest)
+        finally:
+            env.close()

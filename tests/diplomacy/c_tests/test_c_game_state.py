@@ -75,15 +75,21 @@ class TestCGameState:
         assert after["phase"] == 0
         assert after["year"] == 1902
 
-    @pytest.mark.skip(reason="Adjustment phase not yet implemented")
     def test_unit_creation(self):
-        """Test that units can be created during adjustment phase."""
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        from tests.test_diplomacy import set_position
+        with Game() as game:
+            set_position(game, {}, 'W1901A', {'FRANCE': ['PAR']})
+            game.step({'FRANCE': ['A PAR B']})
+            assert game.state['powers']['FRANCE']['units'] == ['A PAR']
 
-    @pytest.mark.skip(reason="Adjustment phase not yet implemented")
     def test_unit_removal(self):
-        """Test that units can be removed during adjustment phase."""
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        with Game(max_years=2) as game:
+            game.step({})
+            game.step({})
+            game.step({'FRANCE': ['A PAR D']})
+            assert len(game.state['powers']['FRANCE']['units']) == 2
 
     def test_supply_center_ownership(self):
         """Test that supply center ownership is tracked correctly."""
@@ -121,7 +127,10 @@ class TestCGameState:
             state = binding.query_game_state(env.env_handle)
         assert state["phase"] == 5
 
-    @pytest.mark.skip(reason="Dislodged units not yet implemented")
     def test_dislodged_units(self):
-        """Test that dislodged units are tracked correctly."""
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        from tests.test_diplomacy import set_position
+        with Game() as game:
+            set_position(game, {'FRANCE': ['A BUR', 'A PIC'], 'GERMANY': ['A BEL']})
+            game.step({'FRANCE': ['A BUR - BEL', 'A PIC S A BUR - BEL']})
+            assert game.state['retreats'][0]['unit'] == 'A BEL'

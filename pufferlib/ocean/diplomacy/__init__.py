@@ -7,4 +7,6 @@ of the board game Diplomacy, designed for multi-agent reinforcement learning.
 
 from pufferlib.ocean.diplomacy.diplomacy import Diplomacy
 
-__all__ = ['Diplomacy']
+__all__ = ['Diplomacy', 'Game', 'POWERS']
+
+from .game import Game, POWERS

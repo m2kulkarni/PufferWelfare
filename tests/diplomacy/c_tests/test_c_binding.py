@@ -76,9 +76,9 @@ class TestCBinding:
             obs, rewards, dones, truncated, info = env.step(actions)
             assert obs is not None
 
-    @pytest.mark.skip(reason="Rendering not yet implemented")
     def test_render(self):
-        """Test that the environment can be rendered."""
-        env = Diplomacy()
-        env.reset()
-        env.render()
+        from pufferlib.ocean.diplomacy import Game
+        with Game() as game:
+            text = game.render()
+            assert '1901 SPRING_MOVEMENT' in text
+            assert 'RUSSIA' in text and 'F STP/SC' in text

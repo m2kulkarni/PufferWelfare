@@ -34,6 +34,10 @@ class Diplomacy(pufferlib.PufferEnv):
         if isinstance(welfare_mode, str):
             welfare_mode = welfare_mode.lower() in ('true', '1', 'yes')
 
+        if type(max_years) is not int or not 1 <= max_years <= 1000:
+            raise ValueError("max_years must be an integer between 1 and 1000")
+        if type(welfare_mode) is not bool or num_players != 7:
+            raise ValueError("Diplomacy requires seven powers and a boolean welfare_mode")
         self.max_years = max_years
         self.welfare_mode = welfare_mode
         self.num_players = num_players
@@ -79,6 +83,7 @@ class Diplomacy(pufferlib.PufferEnv):
 
     def reset(self, seed=None):
         """Reset the environment to initial state."""
+        self._require_open()
         if seed is not None:
             self.seed = seed
 
@@ -91,7 +96,14 @@ class Diplomacy(pufferlib.PufferEnv):
 
     def step(self, actions):
         """Execute one step of the environment."""
-        # Actions are already in self.actions (set by PufferLib)
+        self._require_open()
+        values = np.asarray(actions)
+        if values.shape != self.actions.shape or not np.issubdtype(values.dtype, np.number):
+            raise ValueError("actions must contain one integer per power")
+        if not np.isfinite(values).all() or (values != np.floor(values)).any() or (values < 0).any() or (values >= 1088).any():
+            raise ValueError("actions must be integers in [0, 1088)")
+        self.actions[:] = values
+        # Copy arguments into the shared action buffer before stepping.
         # Call C step function which will process them
         binding.env_step(self.env_handle)
 
@@ -120,8 +132,16 @@ class Diplomacy(pufferlib.PufferEnv):
 
     def close(self):
         """Clean up resources."""
-        if self._renderer is not None:
+        if getattr(self, '_renderer', None) is not None:
             self._renderer.close()
             self._renderer = None
-        if hasattr(self, 'env_handle'):
+        if getattr(self, 'env_handle', None) is not None:
             binding.env_close(self.env_handle)
+            self.env_handle = None
+
+    def _require_open(self):
+        if getattr(self, 'env_handle', None) is None:
+            raise RuntimeError("Diplomacy environment is closed")
+
+    def __del__(self):
+        self.close()

@@ -31,48 +31,62 @@ class TestCWelfare:
         for power in powers:
             assert power["welfare_points"] == 0
 
-    @pytest.mark.skip(reason="Welfare calculation not yet implemented")
     def test_welfare_calculation_basic(self):
-        """Test basic welfare calculation: welfare = cumulative(centers - units)."""
-        # If a power has 3 centers and 3 units:
-        # - Year 1: welfare += (3 - 3) = 0
-        # - Year 2: welfare += (4 - 3) = 1
-        # - Total welfare after Year 2 = 1
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        with Game(max_years=2) as game:
+            game.step({})
+            game.step({})
+            game.step({'FRANCE': ['A PAR D']})
+            assert game.state['powers']['FRANCE']['welfare'] == 1
 
-    @pytest.mark.skip(reason="Welfare calculation not yet implemented")
     def test_welfare_with_unit_disband(self):
-        """Test that disbanding units increases welfare."""
-        # Power with 4 centers, disbands to 2 units:
-        # - welfare += (4 - 2) = 2
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        with Game(max_years=2) as game:
+            game.step({})
+            game.step({})
+            game.step({'FRANCE': ['A PAR D']})
+            assert 'A PAR' not in game.state['powers']['FRANCE']['units']
 
-    @pytest.mark.skip(reason="Welfare calculation not yet implemented")
     def test_welfare_never_decreases(self):
-        """Test that welfare points are cumulative and never decrease."""
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        with Game(max_years=2) as game:
+            game.step({})
+            game.step({})
+            game.step({'FRANCE': ['A PAR D']})
+            before = game.state['powers']['FRANCE']['welfare']
+            for _ in range(3): game.step({})
+            assert game.state['powers']['FRANCE']['welfare'] == before + 1
 
-    @pytest.mark.skip(reason="Welfare calculation not yet implemented")
     def test_welfare_reward_calculation(self):
-        """Test that rewards reflect welfare point changes."""
-        # If welfare increases by 2, reward should be +2
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        with Game(max_years=2) as game:
+            game.step({})
+            game.step({})
+            game.step({'FRANCE': ['A PAR D']})
+            assert game._env.rewards[2] == 1
 
-    @pytest.mark.skip(reason="Welfare calculation not yet implemented")
     def test_voluntary_disband_order(self):
-        """Test that powers can voluntarily disband units."""
-        # In standard diplomacy, you can only disband if over the limit
-        # In welfare diplomacy, you can always disband voluntarily
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        with Game(max_years=2) as game:
+            game.step({})
+            game.step({})
+            game.step({'FRANCE': ['A PAR D']})
+            assert len(game.state['powers']['FRANCE']['units']) == 2
 
-    @pytest.mark.skip(reason="Welfare calculation not yet implemented")
     def test_no_victory_condition(self):
-        """Test that welfare diplomacy has no victory condition."""
-        # Game should continue even if one power has 18+ centers
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        from tests.test_diplomacy import set_position
+        with Game() as game:
+            centers = [l['name'] for l in game.state['locations'] if l['is_supply_center']]
+            set_position(game, {}, 'F1901M', {'FRANCE': centers})
+            game.step({})
+            assert not game.state['terminated']
+            assert len(game.state['powers']['FRANCE']['centers']) == 34
 
-    @pytest.mark.skip(reason="Welfare calculation not yet implemented")
     def test_welfare_observation_encoding(self):
-        """Test that welfare points are included in observations."""
-        # The observation should include each power's welfare points
-        pass
+        from pufferlib.ocean.diplomacy import Game
+        with Game(max_years=2) as game:
+            game.step({})
+            game.step({})
+            game.step({'FRANCE': ['A PAR D']})
+            assert game.observe('FRANCE')['powers']['FRANCE']['welfare'] == 1

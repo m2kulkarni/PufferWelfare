@@ -132,6 +132,9 @@ int can_move(Map* map, UnitType unit_type, int from_loc, int to_loc) {
         to_loc < 0 || to_loc >= map->num_locations) {
         return 0;
     }
+    if (unit_type != UNIT_ARMY && unit_type != UNIT_FLEET) return 0;
+    if (!strcmp(map->locations[from_loc].name, "SWI") ||
+        !strcmp(map->locations[to_loc].name, "SWI")) return 0;
     return map->adjacency_cache[unit_type][from_loc][to_loc];
 }
 
@@ -335,6 +338,12 @@ void init_game(GameState* game, Map* map, int welfare_mode, int max_years) {
     game->powers[6].centers[1] = 18; // CON
     game->powers[6].centers[2] = 58; // SMY
     game->powers[6].num_centers = 3;
+
+    // Center lists and map owners are two views of the same ownership state.
+    for (int i = 0; i < map->num_locations; i++) map->locations[i].owner_power = -1;
+    for (int p = 0; p < MAX_POWERS; p++)
+        for (int c = 0; c < game->powers[p].num_centers; c++)
+            map->locations[game->powers[p].centers[c]].owner_power = p;
 }
 
 void reset_game(GameState* game) {
@@ -564,25 +573,12 @@ static int validate_support_order(GameState* game, Unit* unit, const Order* orde
         }
     }
 
-    int can_support = 0;
-    if (can_move(map, unit->type, unit->location, order->target_unit_location)) {
-        can_support = 1;
-    }
-    if (order->dest_location >= 0 && order->dest_location < map->num_locations) {
-        if (can_move(map, unit->type, unit->location, order->dest_location)) {
-            can_support = 1;
-        } else {
-            int coasts[10];
-            int num_coasts;
-            find_coasts(map, order->dest_location, coasts, &num_coasts);
-            for (int c = 0; c < num_coasts; c++) {
-                if (can_move(map, unit->type, unit->location, coasts[c])) {
-                    can_support = 1;
-                    break;
-                }
-            }
-        }
-    }
+    int destination = order->type == ORDER_SUPPORT_MOVE ? order->dest_location : order->target_unit_location;
+    int can_support = can_move(map, unit->type, unit->location, destination);
+    int coasts[10], num_coasts;
+    find_coasts(map, destination, coasts, &num_coasts);
+    for (int c = 0; c < num_coasts; c++)
+        if (can_move(map, unit->type, unit->location, coasts[c])) can_support = 1;
     if (!can_support) {
         return -1;
     }
@@ -646,6 +642,13 @@ static int validate_convoy_order(GameState* game, Unit* unit, const Order* order
     if (order->dest_location < 0 || order->dest_location >= map->num_locations) {
         return -1;
     }
+
+    int origin = get_parent_location(map, order->target_unit_location);
+    int destination = get_parent_location(map, order->dest_location);
+    if (origin == destination || order->dest_location != destination ||
+        (map->locations[origin].type != LOC_COAST && map->locations[origin].type != LOC_PORT) ||
+        (map->locations[destination].type != LOC_COAST && map->locations[destination].type != LOC_PORT))
+        return -1;
 
     int found_army = 0;
     for (int check_p = 0; check_p < MAX_POWERS; check_p++) {
@@ -749,7 +752,7 @@ int validate_order(GameState* game, int power_id, const Order* order) {
         case ORDER_DISBAND:
             // Can always disband own units (in welfare diplomacy)
             // In standard diplomacy, only during adjustment phase if over limit
-            if (!game->welfare_mode && game->phase != PHASE_WINTER_ADJUSTMENT) {
+            if (game->phase != PHASE_WINTER_ADJUSTMENT) {
                 return -1;  // Wrong phase for standard diplomacy
             }
             return 0;
@@ -3581,6 +3584,12 @@ void calculate_retreat_destinations(GameState* game) {
 
         for (int a = 0; a < loc->num_adjacent; a++) {
             int adj_loc = loc->adjacencies[a];
+            if (dislodged->type == UNIT_ARMY)
+                adj_loc = get_parent_location(game->map, adj_loc);
+            int duplicate = 0;
+            for (int i = 0; i < retreat->num_possible_retreats; i++)
+                if (retreat->possible_retreats[i].location == adj_loc) duplicate = 1;
+            if (duplicate) continue;
 
             // Check if unit can move there (based on unit type and terrain)
             if (!can_move(game->map, dislodged->type, from_loc, adj_loc)) {
@@ -3657,10 +3666,18 @@ void calculate_retreat_destinations(GameState* game) {
                 continue;  // Skip - cannot coastal crawl in retreat
             }
 
+            int occupied = 0;
+            for (int p = 0; p < MAX_POWERS; p++)
+                for (int u = 0; u < game->powers[p].num_units; u++)
+                    if (get_parent_location(game->map, game->powers[p].units[u].location) ==
+                        get_parent_location(game->map, adj_loc)) occupied = 1;
+            if (occupied) continue;
+
             // Valid retreat destination
             retreat->possible_retreats[retreat->num_possible_retreats].location = adj_loc;
             retreat->num_possible_retreats++;
         }
+        *dislodged = *retreat;
     }
 }
 
@@ -3736,7 +3753,7 @@ static void validate_retreat_orders(GameState* game) {
             Order* order = &power->orders[o];
             if (order->type != ORDER_RETREAT && order->type != ORDER_DISBAND) {
                 order->result = RESULT_VOID;
-            } else if (!is_unit_dislodged(power, order->unit_location)) {
+            } else if (validate_retreat_order(power, order) != 0) {
                 order->result = RESULT_VOID;
             }
         }
@@ -3758,7 +3775,8 @@ static int is_location_occupied(GameState* game, int location) {
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
         for (int u = 0; u < power->num_units; u++) {
-            if (power->units[u].location == location) {
+            if (get_parent_location(game->map, power->units[u].location) ==
+                get_parent_location(game->map, location)) {
                 return 1;
             }
         }
@@ -3772,7 +3790,10 @@ static int process_single_retreat(GameState* game, Power* power, DislodgedUnit* 
     for (int o = 0; o < power->num_orders; o++) {
         Order* order = &power->orders[o];
 
+        if (order->result == RESULT_VOID) continue;
         if (order->type == ORDER_RETREAT && order->unit_location == dislodged->from_location) {
+            if (dislodged->type == UNIT_ARMY)
+                order->target_location = get_parent_location(game->map, order->target_location);
             int valid = is_valid_retreat_destination(dislodged, order->target_location);
             int occupied = valid && is_location_occupied(game, order->target_location);
 
@@ -3818,7 +3839,7 @@ static int collect_retreat_destinations(GameState* game, int* destinations, int*
 }
 
 // Detect and mark conflicts (multiple retreats to same location)
-static void detect_retreat_conflicts(int* destinations, int* has_conflict, int count) {
+static void detect_retreat_conflicts(GameState* game, int* destinations, int* has_conflict, int count) {
     for (int i = 0; i < count; i++) {
         has_conflict[i] = 0;
     }
@@ -3826,7 +3847,7 @@ static void detect_retreat_conflicts(int* destinations, int* has_conflict, int c
         if (destinations[i] == -1) continue;
         for (int j = i + 1; j < count; j++) {
             if (destinations[j] == -1) continue;
-            if (destinations[i] == destinations[j]) {
+            if (get_parent_location(game->map, destinations[i]) == get_parent_location(game->map, destinations[j])) {
                 has_conflict[i] = 1;
                 has_conflict[j] = 1;
             }
@@ -3836,19 +3857,17 @@ static void detect_retreat_conflicts(int* destinations, int* has_conflict, int c
 
 // Apply conflict results to orders and destinations
 static void apply_retreat_conflicts(GameState* game, int* destinations, int* has_conflict, int count) {
-    int order_idx = 0;
+    int idx = 0;
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
-        for (int o = 0; o < power->num_orders; o++) {
-            Order* order = &power->orders[o];
-            if (order->type == ORDER_RETREAT || order->type == ORDER_DISBAND) {
-                if (order_idx < count && has_conflict[order_idx]) {
-                    destinations[order_idx] = -1;
-                    if (order->type == ORDER_RETREAT) {
-                        order->result = RESULT_BOUNCE;
-                    }
-                }
-                order_idx++;
+        for (int r = 0; r < power->num_retreats; r++, idx++) {
+            if (idx >= count || !has_conflict[idx]) continue;
+            destinations[idx] = -1;
+            for (int o = 0; o < power->num_orders; o++) {
+                Order* order = &power->orders[o];
+                if (order->type == ORDER_RETREAT &&
+                    order->unit_location == power->retreats[r].from_location)
+                    order->result = RESULT_BOUNCE;
             }
         }
     }
@@ -3891,7 +3910,7 @@ void resolve_retreat_phase(GameState* game) {
     int has_conflict[MAX_UNITS];
     int num_retreats = collect_retreat_destinations(game, retreat_destinations, retreat_power);
 
-    detect_retreat_conflicts(retreat_destinations, has_conflict, num_retreats);
+    detect_retreat_conflicts(game, retreat_destinations, has_conflict, num_retreats);
     apply_retreat_conflicts(game, retreat_destinations, has_conflict, num_retreats);
     apply_successful_retreats(game, retreat_destinations, num_retreats);
 
@@ -3922,15 +3941,23 @@ static int process_build_order(GameState* game, Power* power, Order* order, int 
         return diff;
     }
 
-    Location* loc = &game->map->locations[order->unit_location];
+    if (order->unit_type == UNIT_ARMY)
+        order->unit_location = get_parent_location(game->map, order->unit_location);
+    Location* loc = &game->map->locations[get_parent_location(game->map, order->unit_location)];
+    Location* build_loc = &game->map->locations[order->unit_location];
     int is_valid_build = 0;
 
     if (loc->has_supply_center && loc->owner_power == p) {
-        int location_empty = !is_location_occupied_by_power(power, order->unit_location);
+        int location_empty = 1;
+        int parent = get_parent_location(game->map, order->unit_location);
+        for (int q = 0; q < MAX_POWERS; q++)
+            for (int u = 0; u < game->powers[q].num_units; u++)
+                if (get_parent_location(game->map, game->powers[q].units[u].location) == parent)
+                    location_empty = 0;
 
         if (location_empty && loc->is_home_center == p) {
             if (order->unit_type == UNIT_FLEET) {
-                is_valid_build = (loc->type != LOC_LAND && loc->type != LOC_PORT);
+                is_valid_build = (build_loc->type != LOC_LAND && build_loc->type != LOC_PORT);
             } else {
                 is_valid_build = 1;
             }
@@ -3969,6 +3996,14 @@ static int remove_unit_at_location(Power* power, int location) {
 
 // Process a disband order, returns new diff value
 static int process_disband_order(GameState* game, Power* power, Order* order, int diff) {
+    int matching_unit = 0;
+    for (int u = 0; u < power->num_units; u++)
+        if (power->units[u].location == order->unit_location && power->units[u].type == order->unit_type)
+            matching_unit = 1;
+    if (!matching_unit) {
+        order->result = RESULT_VOID;
+        return diff;
+    }
     if (diff > 0 || game->welfare_mode) {
         int unit_found = remove_unit_at_location(power, order->unit_location);
         order->result = unit_found ? RESULT_SUCCESS : RESULT_VOID;
@@ -4090,9 +4125,18 @@ void resolve_adjustment_phase(GameState* game) {
     for (int p = 0; p < MAX_POWERS; p++) {
         Power* power = &game->powers[p];
         int diff = power->num_units - power->num_centers;
+        int builds = 0, disbands = 0;
+        for (int o = 0; o < power->num_orders; o++) {
+            builds |= power->orders[o].type == ORDER_BUILD;
+            disbands |= power->orders[o].type == ORDER_DISBAND;
+        }
+        if (builds && disbands) {
+            for (int o = 0; o < power->num_orders; o++) power->orders[o].result = RESULT_VOID;
+        }
 
         for (int o = 0; o < power->num_orders; o++) {
             Order* order = &power->orders[o];
+            if (builds && disbands) continue;
             if (order->type == ORDER_BUILD) {
                 diff = process_build_order(game, power, order, p, diff);
             } else if (order->type == ORDER_DISBAND) {
@@ -4124,6 +4168,25 @@ void resolve_adjustment_phase(GameState* game) {
             if (welfare_gain > 0) {
                 power->welfare_points += welfare_gain;
             }
+        }
+    }
+}
+
+static void update_center_ownership(GameState* game) {
+    Map* map = game->map;
+    for (int p = 0; p < MAX_POWERS; p++) {
+        Power* power = &game->powers[p];
+        for (int u = 0; u < power->num_units; u++) {
+            int loc = get_parent_location(map, power->units[u].location);
+            if (map->locations[loc].has_supply_center) map->locations[loc].owner_power = p;
+        }
+    }
+    for (int p = 0; p < MAX_POWERS; p++) game->powers[p].num_centers = 0;
+    for (int loc = 0; loc < map->num_locations; loc++) {
+        Location* province = &map->locations[loc];
+        if (province->has_supply_center && province->parent_location < 0 && province->owner_power >= 0) {
+            Power* power = &game->powers[province->owner_power];
+            power->centers[power->num_centers++] = loc;
         }
     }
 }
@@ -4169,6 +4232,18 @@ void advance_phase(GameState* game) {
         case PHASE_COMPLETED:
             // Game is over, no more phases
             break;
+    }
+
+    if (game->phase == PHASE_WINTER_ADJUSTMENT) {
+        update_center_ownership(game);
+        if (!game->welfare_mode) {
+            for (int p = 0; p < MAX_POWERS; p++) {
+                if (game->powers[p].num_centers >= 18) {
+                    game->phase = PHASE_COMPLETED;
+                    game->is_game_over = 1;
+                }
+            }
+        }
     }
 
     // Clear orders for new phase
@@ -4242,8 +4317,8 @@ static void encode_observations(Env* env) {
 
                 // Buildable (1 feature): home center, empty, and in adjustment phase
                 int is_home = l->is_home_center;
-                int can_build = (is_home >= 0 && is_home == agent &&
-                                 unit_at[loc] < 0 &&
+                int can_build = (l->has_supply_center && l->owner_power == agent &&
+                                 is_home == agent && unit_at[loc] < 0 &&
                                  game->phase == PHASE_WINTER_ADJUSTMENT);
                 base[idx++] = can_build ? 1.0f : 0.0f;
             } else {

@@ -55,6 +55,14 @@ static int my_log(PyObject* dict, Log* log) {
 // Custom Python Methods for Game State Queries
 // ============================================================================
 
+// Dict insertion retains its value; these helpers consume newly-created references.
+static int set_owned(PyObject* dict, const char* key, PyObject* value) {
+    if (!value) return -1;
+    int result = PyDict_SetItemString(dict, key, value);
+    Py_DECREF(value);
+    return result;
+}
+
 static PyObject* query_game_state(PyObject* self, PyObject* args) {
     PyObject* handle_obj;
     if (!PyArg_ParseTuple(args, "O", &handle_obj)) {
@@ -71,16 +79,17 @@ static PyObject* query_game_state(PyObject* self, PyObject* args) {
 
     // Return dict with game state info
     PyObject* state_dict = PyDict_New();
-    PyDict_SetItemString(state_dict, "year", PyLong_FromLong(get_current_year(game)));
-    PyDict_SetItemString(state_dict, "phase", PyLong_FromLong((long)get_current_phase(game)));
+    set_owned(state_dict, "year", PyLong_FromLong(get_current_year(game)));
+    set_owned(state_dict, "phase", PyLong_FromLong((long)get_current_phase(game)));
 
+    set_owned(state_dict, "is_game_over", PyBool_FromLong(game->is_game_over));
     // Add power info
     PyObject* powers_list = PyList_New(MAX_POWERS);
     for (int p = 0; p < MAX_POWERS; p++) {
         PyObject* power_dict = PyDict_New();
-        PyDict_SetItemString(power_dict, "num_units", PyLong_FromLong(get_num_units(game, p)));
-        PyDict_SetItemString(power_dict, "num_centers", PyLong_FromLong(get_num_centers(game, p)));
-        PyDict_SetItemString(power_dict, "welfare_points", PyLong_FromLong(get_welfare_points(game, p)));
+        set_owned(power_dict, "num_units", PyLong_FromLong(get_num_units(game, p)));
+        set_owned(power_dict, "num_centers", PyLong_FromLong(get_num_centers(game, p)));
+        set_owned(power_dict, "welfare_points", PyLong_FromLong(get_welfare_points(game, p)));
 
         // Add unit locations
         PyObject* units_list = PyList_New(get_num_units(game, p));
@@ -89,11 +98,12 @@ static PyObject* query_game_state(PyObject* self, PyObject* args) {
             int location;
             get_unit_info(game, p, u, &type, &location);
             PyObject* unit_dict = PyDict_New();
-            PyDict_SetItemString(unit_dict, "type", PyLong_FromLong((long)type));
-            PyDict_SetItemString(unit_dict, "location", PyLong_FromLong(location));
+            set_owned(unit_dict, "type", PyLong_FromLong((long)type));
+            set_owned(unit_dict, "location", PyLong_FromLong(location));
             PyList_SetItem(units_list, u, unit_dict);
         }
         PyDict_SetItemString(power_dict, "units", units_list);
+    Py_DECREF(units_list);
 
         // Add center locations
         int centers[MAX_UNITS];
@@ -104,10 +114,12 @@ static PyObject* query_game_state(PyObject* self, PyObject* args) {
             PyList_SetItem(centers_list, c, PyLong_FromLong(centers[c]));
         }
         PyDict_SetItemString(power_dict, "centers", centers_list);
+    Py_DECREF(centers_list);
 
         PyList_SetItem(powers_list, p, power_dict);
     }
     PyDict_SetItemString(state_dict, "powers", powers_list);
+    Py_DECREF(powers_list);
 
     return state_dict;
 }
@@ -127,18 +139,22 @@ static PyObject* query_map_info(PyObject* self, PyObject* args) {
     Map* map = env->game->map;
 
     PyObject* map_dict = PyDict_New();
-    PyDict_SetItemString(map_dict, "num_locations", PyLong_FromLong(get_num_locations(map)));
+    set_owned(map_dict, "num_locations", PyLong_FromLong(get_num_locations(map)));
 
     // Add location info
     PyObject* locations_list = PyList_New(get_num_locations(map));
     for (int i = 0; i < get_num_locations(map); i++) {
         PyObject* loc_dict = PyDict_New();
-        PyDict_SetItemString(loc_dict, "name", PyUnicode_FromString(get_location_name(map, i)));
-        PyDict_SetItemString(loc_dict, "type", PyLong_FromLong((long)get_location_type(map, i)));
-        PyDict_SetItemString(loc_dict, "is_supply_center", PyLong_FromLong(is_supply_center(map, i)));
+        set_owned(loc_dict, "name", PyUnicode_FromString(get_location_name(map, i)));
+        set_owned(loc_dict, "type", PyLong_FromLong((long)get_location_type(map, i)));
+        set_owned(loc_dict, "is_supply_center", PyLong_FromLong(is_supply_center(map, i)));
+        set_owned(loc_dict, "owner_power", PyLong_FromLong(map->locations[i].owner_power));
+        set_owned(loc_dict, "home_power", PyLong_FromLong(map->locations[i].is_home_center));
+        set_owned(loc_dict, "parent", PyLong_FromLong(map->locations[i].parent_location));
         PyList_SetItem(locations_list, i, loc_dict);
     }
     PyDict_SetItemString(map_dict, "locations", locations_list);
+    Py_DECREF(locations_list);
 
     return map_dict;
 }
@@ -166,12 +182,12 @@ static PyObject* test_parse_order(PyObject* self, PyObject* args) {
 
     // Return parsed order as dict
     PyObject* order_dict = PyDict_New();
-    PyDict_SetItemString(order_dict, "type", PyLong_FromLong((long)order.type));
-    PyDict_SetItemString(order_dict, "unit_type", PyLong_FromLong((long)order.unit_type));
-    PyDict_SetItemString(order_dict, "unit_location", PyLong_FromLong(order.unit_location));
-    PyDict_SetItemString(order_dict, "target_location", PyLong_FromLong(order.target_location));
-    PyDict_SetItemString(order_dict, "target_unit_location", PyLong_FromLong(order.target_unit_location));
-    PyDict_SetItemString(order_dict, "dest_location", PyLong_FromLong(order.dest_location));
+    set_owned(order_dict, "type", PyLong_FromLong((long)order.type));
+    set_owned(order_dict, "unit_type", PyLong_FromLong((long)order.unit_type));
+    set_owned(order_dict, "unit_location", PyLong_FromLong(order.unit_location));
+    set_owned(order_dict, "target_location", PyLong_FromLong(order.target_location));
+    set_owned(order_dict, "target_unit_location", PyLong_FromLong(order.target_unit_location));
+    set_owned(order_dict, "dest_location", PyLong_FromLong(order.dest_location));
 
     return order_dict;
 }
@@ -645,13 +661,13 @@ static PyObject* get_orders(PyObject* self, PyObject* args) {
         Order* order = &power->orders[i];
         PyObject* order_dict = PyDict_New();
 
-        PyDict_SetItemString(order_dict, "type", PyLong_FromLong((long)order->type));
-        PyDict_SetItemString(order_dict, "unit_type", PyLong_FromLong((long)order->unit_type));
-        PyDict_SetItemString(order_dict, "unit_location", PyLong_FromLong(order->unit_location));
-        PyDict_SetItemString(order_dict, "target_location", PyLong_FromLong(order->target_location));
-        PyDict_SetItemString(order_dict, "target_unit_location", PyLong_FromLong(order->target_unit_location));
-        PyDict_SetItemString(order_dict, "dest_location", PyLong_FromLong(order->dest_location));
-        PyDict_SetItemString(order_dict, "result", PyLong_FromLong((long)order->result));
+        set_owned(order_dict, "type", PyLong_FromLong((long)order->type));
+        set_owned(order_dict, "unit_type", PyLong_FromLong((long)order->unit_type));
+        set_owned(order_dict, "unit_location", PyLong_FromLong(order->unit_location));
+        set_owned(order_dict, "target_location", PyLong_FromLong(order->target_location));
+        set_owned(order_dict, "target_unit_location", PyLong_FromLong(order->target_unit_location));
+        set_owned(order_dict, "dest_location", PyLong_FromLong(order->dest_location));
+        set_owned(order_dict, "result", PyLong_FromLong((long)order->result));
 
         PyList_SetItem(orders_list, i, order_dict);
     }
@@ -780,11 +796,15 @@ static PyObject* get_dislodged_units(PyObject* self, PyObject* args) {
         DislodgedUnit* d = &game->dislodged[i];
         PyObject* d_dict = PyDict_New();
         
-        PyDict_SetItemString(d_dict, "power_id", PyLong_FromLong(d->power_id));
-        PyDict_SetItemString(d_dict, "type", PyLong_FromLong(d->type));
-        PyDict_SetItemString(d_dict, "from_location", PyLong_FromLong(d->from_location));
-        PyDict_SetItemString(d_dict, "dislodged_by_location", PyLong_FromLong(d->dislodged_by_location));
+        set_owned(d_dict, "power_id", PyLong_FromLong(d->power_id));
+        set_owned(d_dict, "type", PyLong_FromLong(d->type));
+        set_owned(d_dict, "from_location", PyLong_FromLong(d->from_location));
+        set_owned(d_dict, "dislodged_by_location", PyLong_FromLong(d->dislodged_by_location));
         
+        PyObject* destinations = PyList_New(d->num_possible_retreats);
+        for (int j = 0; j < d->num_possible_retreats; j++)
+            PyList_SetItem(destinations, j, PyLong_FromLong(d->possible_retreats[j].location));
+        set_owned(d_dict, "possible_retreats", destinations);
         PyList_Append(result_list, d_dict);
         Py_DECREF(d_dict);
     }

@@ -161,7 +161,6 @@ class TestSimpleMovement:
 class TestSimpleSupport:
     """Test basic support mechanics (to be implemented)."""
 
-    @pytest.mark.skip(reason="Support adjudication not yet implemented")
     def test_supported_attack(self):
         """A supported attack should dislodge a defender."""
         game = GameAdapter()
@@ -180,7 +179,6 @@ class TestSimpleSupport:
         assert 'A TRI' in italy_units
         assert 'F TRI' not in austria_units
 
-    @pytest.mark.skip(reason="Support adjudication not yet implemented")
     def test_support_prevents_dislodgement(self):
         """Support to hold should prevent dislodgement."""
         game = GameAdapter()
@@ -201,7 +199,6 @@ class TestSimpleSupport:
 class TestCircularMovement:
     """Test circular movement (to be implemented)."""
 
-    @pytest.mark.skip(reason="Circular movement not yet implemented")
     def test_simple_circular_movement(self):
         """Three units in a circle should all move."""
         game = GameAdapter()
